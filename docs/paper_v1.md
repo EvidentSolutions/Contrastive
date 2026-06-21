@@ -613,12 +613,13 @@ off to heavier tools for causal verification.
   component is necessary, not merely correlated. We verify causality via
   activation patching for the hot dog case (§4.1) and via injection recovery
   for four cases (§3.1), but the per-head decomposition (§5) is observational.
-- **Tokenization alignment.** The method requires that the two inputs align
-  at the token level — position *p* must correspond to the same structural role
-  in both inputs. If a minimal-pair change shifts tokenization boundaries
-  (e.g., adding a word that merges with an adjacent token), position-wise
-  subtraction becomes meaningless. All pairs in this paper were verified to
-  produce aligned tokenizations.
+- **Tokenization for per-position reading.** Reading the contrast at the
+  final position (the prediction site) works regardless of how the two inputs
+  tokenize, since causal attention aggregates all preceding content. The
+  per-position trace (§2.2) requires that the read position corresponds to the
+  same structural role in both inputs — e.g., "dog" must be at the same
+  position in both prompts. This is naturally satisfied by minimal pairs that
+  differ in one token.
 - **Model coverage.** Primary mechanistic results (§4) on Phi-2 only. IOI
   replicates on Pythia models. The axis taxonomy (§6) covers four models
   (Pythia-410M, Pythia-1.4B, Phi-2, Phi-4) and shows both universal and
