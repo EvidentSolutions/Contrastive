@@ -160,10 +160,13 @@ reports as token labels at intermediate layers are not predictions but
 continuation preparations: tokens the model might produce at the current or
 future positions, modulated by context.
 
-W_U contributes the interpretable token labels. Trajectory smoothness is a
-general property of the residual stream, not a validation of content (§3.1).
-The causal injection test (§3.2) validates that the identified subspace is
-causally relevant.
+W_U contributes the interpretable token labels. Trajectory smoothness
+(consecutive-layer cosine ~0.9) is a general property of the residual stream,
+not specific to meaningful contrasts: unrelated pairs ("The hot dog was" vs
+"Quantum mechanics is") are equally smooth (0.93 ± 0.01, N=40) as minimal
+pairs (0.88 ± 0.03, N=6), because any two residual streams diverge gradually.
+Random directions give cosine ≈ 0.00 (z = 64–93), confirming Δh is structured
+rather than noise, but smoothness alone does not validate content.
 
 The method is silent on non-prediction-shaped computation — structure in the
 residual stream that is not aligned with W_U's token rows.
@@ -172,19 +175,7 @@ residual stream that is not aligned with W_U's token rows.
 
 ## 3. Validation
 
-### 3.1 Smoothness is not a validation of content
-
-Trajectory smoothness (consecutive-layer cosine ~0.9) is a general property of
-the residual stream. Unrelated pairs ("The hot dog was" vs "Quantum mechanics
-is") are equally smooth (mean 0.93 ± 0.01, N=40) as minimal pairs (0.88 ±
-0.03, N=6) — in fact slightly smoother, because unrelated inputs diverge
-diffusely across many orthogonal directions, while minimal pairs diverge along
-a focused axis that shifts at specific layers. Random directions give cosine
-≈ 0.00 (z = 64–93), confirming Δh is structured rather than noise, but this
-does not distinguish meaningful from arbitrary contrasts. The validation of
-content comes from causal injection (§3.2) and logit-lens invisibility (§1).
-
-### 3.2 The subspace identified by the probe contains the causal mechanism
+### 3.1 The subspace identified by the probe contains the causal mechanism
 
 The probe is exploratory — it reads a difference, not a cause. But we can test
 whether the subspace it identifies contains causally relevant information by
@@ -578,7 +569,7 @@ off to heavier tools for causal verification.
   establishes causality. Activation patching is required to confirm that a
   component is necessary, not merely correlated. We verify causality via
   activation patching for the hot dog case (§4.1) and via injection recovery
-  for four cases (§3.2), but the per-head decomposition (§5) is observational.
+  for four cases (§3.1), but the per-head decomposition (§5) is observational.
 - **Tokenization alignment.** The method requires that the two inputs align
   at the token level — position *p* must correspond to the same structural role
   in both inputs. If a minimal-pair change shifts tokenization boundaries
