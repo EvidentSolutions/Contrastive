@@ -248,16 +248,34 @@ Head 19 attends to "dog" position with weight 0.911 in the hot-dog context vs
 0.735 in cold-dog. Head 29 attends 0.345 vs 0.138. These heads read the
 compound-noun information from "dog."
 
-**Activation patching:** Replacing the "dog" position's hidden state (L0) with
-the cold-dog version eliminates the food signal: the top prediction shifts from
-food-related to animal-related tokens. Replacing the "hot" position's state
-has minimal effect — the food prediction persists, because the information has
-already been copied to "dog" via L0 attention.
+**Activation patching at multiple layers and positions:**
+
+| Position patched | Layer | P(food) | Top-1 | Effect |
+|-----------------|-------|---------|-------|--------|
+| (baseline hot dog) | — | 0.142 | "too" | — |
+| dog (pos 2) | L0–L4 | 0.000 | "pant" | Food eliminated |
+| dog (pos 2) | L5 | 0.094 | "more" | Food partially survives |
+| dog (pos 2) | L12+ | 0.12–0.14 | "too" | Near baseline |
+| hot (pos 1) | L0–L28 | 0.11–0.14 | "too" | Minimal effect at all layers |
+| was (pos 3) | L0–L5 | 0.13–0.14 | "more" | Food preserved |
+| was (pos 3) | L12 | 0.058 | "placed" | Food declining |
+| was (pos 3) | L20+ | 0.005 | "sh" | Food eliminated |
+
+The patching traces the two-hop chain precisely. (1) Patching "dog" at L0–L4
+eliminates the food signal entirely — the compound meaning has not yet been
+computed. At L5 (where "fried" first appears in the contrastive projection),
+food partially survives the patch — the computation is happening at this
+layer. By L12+ the patch has minimal effect. (2) Patching "hot" has no effect
+at any layer — its information has already been copied to "dog" via L0
+attention. (3) Patching "was" has no effect at L0–L5 (the food information
+hasn't arrived yet) but eliminates food from L12 onward — confirming that
+attention at L6+ copies the compound meaning from "dog" to "was."
 
 **Mechanism:** Attention at L0 copies "hot" to the "dog" position. The compound
-is recognized at the "dog" position by L5 ("fried" first appears). Attention at
-L5-6 reads this from "dog" to "was." The model's food/animal disambiguation is
-a two-hop attention chain: hot→dog (L0), dog→was (L5).
+is recognized at the "dog" position at L5 ("fried" first appears). Attention at
+L6+ reads this from "dog" to "was." The contrastive projection identified each
+stage; activation patching at three positions and multiple layers confirms the
+information flow.
 
 ### 4.2 Other disambiguation cases
 
