@@ -16,9 +16,10 @@ except Exception:
     pass
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import os
 
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
-MODEL = "microsoft/phi-2"
+MODEL = os.environ.get("MODEL", "microsoft/phi-2")
 
 
 def main():
@@ -33,6 +34,30 @@ def main():
     NL = model.config.num_hidden_layers
     W_U = model.lm_head.weight.detach()
 
+    def _sl(*layers):
+        """Scale layer indices from 32-layer base to current NL."""
+        return sorted(set(min(round(l * NL / 32), NL) for l in layers))
+
+    # --- 5-entity chain ---
+    base5 = (
+        "Alice is taller than Bob. Bob is taller than Carol. "
+        "Carol is taller than Dan. Dan is taller than Eve. "
+    )
+    queries5 = {
+        "tallest": base5 + "Who is the tallest?\nAnswer:",
+        "2nd": base5 + "Who is the second tallest?\nAnswer:",
+        "3rd": base5 + "Who is the third tallest?\nAnswer:",
+        "4th": base5 + "Who is the fourth tallest?\nAnswer:",
+        "shortest": base5 + "Who is the shortest?\nAnswer:",
+    }
+    names5 = ["Alice", "Bob", "Carol", "Dan", "Eve"]
+    name_ids5 = {
+        n: tok(f" {n}", add_special_tokens=False)["input_ids"][0]
+        for n in names5
+    }
+    order5 = ["tallest", "2nd", "3rd", "4th", "shortest"]
+
+    # --- 4-entity chain (original) ---
     base = (
         "Alice is taller than Bob. Bob is taller than Carol. "
         "Carol is taller than Dan. "
@@ -71,7 +96,7 @@ def main():
     order = ["tallest", "2nd_tallest", "3rd_tallest", "shortest"]
     # Expected answers: Alice, Bob, Carol, Dan
 
-    for L in [24, 28, 32]:
+    for L in _sl(24, 28, 32):
         print(f"\n{'='*100}")
         print(f"Layer {L}")
         print(f"{'='*100}")
@@ -236,6 +261,121 @@ def main():
     keys = list(outs.keys())
     for key in keys:
         del outs[key]
+    torch.cuda.empty_cache()
+
+    # ==================================================================
+    # 5-entity analysis
+    # ==================================================================
+    print(f"\n{'='*100}")
+    print("5-ENTITY CHAIN: Alice > Bob > Carol > Dan > Eve")
+    print(f"{'='*100}")
+
+    outs5 = {}
+    for key, text in queries5.items():
+        ids = tok(text, add_special_tokens=False)["input_ids"]
+        with torch.no_grad():
+            out = model(
+                torch.tensor([ids], device=DEV), output_hidden_states=True
+            )
+            gen = model.generate(
+                torch.tensor([ids], device=DEV),
+                max_new_tokens=15,
+                do_sample=False,
+                pad_token_id=tok.eos_token_id,
+            )
+        outs5[key] = (out, ids)
+        answer = tok.decode(gen[0][len(ids):]).strip().split("\n")[0][:40]
+        print(f"  {key:>10}: -> {answer}")
+
+    for L in _sl(24, 28, 32):
+        print(f"\n{'='*100}")
+        print(f"Layer {L}")
+        print(f"{'='*100}")
+
+        # Name logits
+        print(f"\n  Name logits at answer position:")
+        for key in order5:
+            out, ids = outs5[key]
+            h = out.hidden_states[L][0, -1, :].float()
+            logits = h @ W_U.float().T
+            nl = {n: float(logits[tid]) for n, tid in name_ids5.items()}
+            winner = max(nl, key=nl.get)
+            vals_str = "  ".join(f"{n[0]}={nl[n]:>+7.1f}" for n in names5)
+            print(f"    {key:>10}: {vals_str} -> {winner}")
+
+        # Full hidden states
+        full5 = {}
+        for key in order5:
+            out, ids = outs5[key]
+            full5[key] = out.hidden_states[L][0, -1, :].float().cpu()
+
+        # Step vectors
+        steps = []
+        step_names = []
+        for i in range(len(order5) - 1):
+            d = full5[order5[i + 1]] - full5[order5[i]]
+            steps.append(d)
+            step_names.append(f"{order5[i]}->{order5[i+1]}")
+
+        print(f"\n  Step vectors in {steps[0].shape[0]}-dim space:")
+        for i, (s, sn) in enumerate(zip(steps, step_names)):
+            print(f"    ||{sn}|| = {float(s.norm()):.1f}")
+
+        print(f"\n  Step cosines:")
+        for i in range(len(steps)):
+            for j in range(i + 1, len(steps)):
+                c = float(torch.nn.functional.cosine_similarity(
+                    steps[i].unsqueeze(0), steps[j].unsqueeze(0)))
+                print(f"    cos({step_names[i]}, {step_names[j]}) = {c:>+.3f}")
+
+        # SVD of step matrix
+        step_mat = torch.stack(steps)
+        U, S, V = torch.svd(step_mat)
+        print(f"\n  SVD of step vectors:")
+        total_var = S.pow(2).sum()
+        for i in range(min(4, len(S))):
+            print(f"    S{i+1} = {S[i]:.1f} ({S[i]**2/total_var:.1%})")
+
+        # Project query states into top-2 subspace
+        all_h = torch.stack([full5[k] for k in order5])
+        center = all_h.mean(dim=0)
+        centered = all_h - center
+        U_q, S_q, V_q = torch.svd(centered)
+        V2_q = V_q[:, :2]
+        proj_2d = centered @ V2_q
+
+        print(f"\n  Query states in top-2 subspace:")
+        for i, key in enumerate(order5):
+            x, y = float(proj_2d[i, 0]), float(proj_2d[i, 1])
+            angle = float(
+                torch.atan2(torch.tensor(y), torch.tensor(x))
+                * 180 / 3.14159)
+            norm = float(proj_2d[i].norm())
+            print(f"    {key:>10}: ({x:>+8.1f}, {y:>+8.1f})"
+                  f"  norm={norm:.1f}  angle={angle:>+7.1f}deg")
+
+        # Consecutive angular steps (should be 72° for uniform 5-rotation)
+        print(f"  Consecutive angular steps (72° = uniform 5-rotation):")
+        for i in range(len(order5) - 1):
+            a1 = float(torch.atan2(proj_2d[i, 1], proj_2d[i, 0])
+                        * 180 / 3.14159)
+            a2 = float(torch.atan2(proj_2d[i+1, 1], proj_2d[i+1, 0])
+                        * 180 / 3.14159)
+            step = a2 - a1
+            if step > 180: step -= 360
+            if step < -180: step += 360
+            print(f"    {order5[i]:>10} -> {order5[i+1]:<10}: "
+                  f"{step:>+7.1f}deg")
+
+        # SVD variance
+        print(f"  SVD of centered query states:")
+        total_var_q = S_q.pow(2).sum()
+        for i in range(min(5, len(S_q))):
+            pct = S_q[i] ** 2 / total_var_q
+            print(f"    S{i+1} = {S_q[i]:.1f} ({pct:.1%})")
+
+    for key in list(outs5.keys()):
+        del outs5[key]
     torch.cuda.empty_cache()
 
     print(f"\n{'='*100}")

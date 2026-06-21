@@ -15,9 +15,10 @@ except Exception:
     pass
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import os
 
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
-MODEL = "microsoft/phi-2"
+MODEL = os.environ.get("MODEL", "microsoft/phi-2")
 
 
 def tk(logits, k=6):
@@ -44,6 +45,11 @@ for p in model.parameters():
 
 NL = model.config.num_hidden_layers
 W_U = model.lm_head.weight.detach()
+
+
+def _sl(*layers):
+    """Scale layer indices from 32-layer base to current NL."""
+    return sorted(set(min(round(l * NL / 32), NL) for l in layers))
 
 # ============================================================
 # 1. KILLING SEVERITY
@@ -83,7 +89,7 @@ for obj in objects:
 
     # Contrast at the OBJECT position vs the prefix's last position
     # prefix ends at 'a' (pos 3), full prompt has object at pos 4
-    for L in [20, 28]:
+    for L in _sl(20, 28):
         h_obj = out.hidden_states[L][0, -1, :].float()
         h_pre = prefix_out.hidden_states[L][0, -1, :].float()
         dh = h_obj - h_pre
@@ -114,7 +120,7 @@ with torch.no_grad():
         output_hidden_states=True,
     )
 
-for L in [8, 16, 20, 24, 28, 32]:
+for L in _sl(8, 16, 20, 24, 28, 32):
     # At object position (pos 5)
     h_f = fly_out.hidden_states[L][0, -1, :].float()
     h_b = boy_out.hidden_states[L][0, -1, :].float()
@@ -208,7 +214,7 @@ for label, pa, pb in arith_pairs:
         f"{[tok.decode([t]).strip() for t in ids_b]}"
     )
 
-    for L in [16, 24, 28, 32]:
+    for L in _sl(16, 24, 28, 32):
         h_a = out_a.hidden_states[L][0, -1, :].float()
         h_b = out_b.hidden_states[L][0, -1, :].float()
         dh = h_a - h_b

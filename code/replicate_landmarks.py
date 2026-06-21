@@ -15,9 +15,10 @@ except Exception:
     pass
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import os
 
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
-MODEL = "microsoft/phi-2"
+MODEL = os.environ.get("MODEL", "microsoft/phi-2")
 
 
 def tk(logits, k=5):
@@ -36,7 +37,7 @@ def bk(logits, k=5):
 
 def run_pair(model, tok, pa, pb, NL, W_U, layers=None):
     if layers is None:
-        layers = [8, 16, 20, 24, 28, 32]
+        layers = _sl(8, 16, 20, 24, 28, 32)
     ids_a = tok(pa, add_special_tokens=False)["input_ids"]
     ids_b = tok(pb, add_special_tokens=False)["input_ids"]
     with torch.no_grad():
@@ -84,6 +85,10 @@ for p in model.parameters():
     p.requires_grad_(False)
 NL = model.config.num_hidden_layers
 W_U = model.lm_head.weight.detach()
+
+def _sl(*layers):
+    """Scale layer indices from 32-layer base to current NL."""
+    return sorted(set(min(round(l * NL / 32), NL) for l in layers))
 
 # ============================================================
 print("=" * 100)
@@ -152,7 +157,7 @@ successors = [
 for pa, pb in successors:
     print()
     run_pair(model, tok, pa, pb, NL, W_U,
-             layers=[16, 24, 28, 32])
+             layers=_sl(16, 24, 28, 32))
 
 torch.cuda.empty_cache()
 

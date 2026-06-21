@@ -16,9 +16,10 @@ except Exception:
     pass
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import os
 
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
-MODEL = "microsoft/phi-2"
+MODEL = os.environ.get("MODEL", "microsoft/phi-2")
 
 print(f"Loading {MODEL}...")
 model = AutoModelForCausalLM.from_pretrained(
@@ -32,13 +33,30 @@ NL = model.config.num_hidden_layers
 W_U = model.lm_head.weight.detach()
 
 
+def _sl(*layers):
+    """Scale layer indices from 32-layer base to current NL."""
+    return sorted(set(min(round(l * NL / 32), NL) for l in layers))
+
+
 def get_top1(text):
     ids = tok(text, add_special_tokens=False)["input_ids"]
     with torch.no_grad():
+        gen = model.generate(
+            torch.tensor([ids], device=DEV),
+            max_new_tokens=4, do_sample=False,
+            pad_token_id=tok.eos_token_id,
+        )
+    answer = tok.decode(gen[0][len(ids):]).strip().split()[0] if len(gen[0]) > len(ids) else ""
+    # also get probability of the generated sequence
+    with torch.no_grad():
         out = model(torch.tensor([ids], device=DEV))
     probs = torch.softmax(out.logits[0, -1].float(), -1)
-    top1_id = int(probs.argmax())
-    return tok.decode([top1_id]).strip(), float(probs[top1_id])
+    # find the token id for the answer (first non-space generated token)
+    gen_ids = gen[0][len(ids):].tolist()
+    # skip leading space tokens
+    ans_ids = [t for t in gen_ids if tok.decode([t]).strip()]
+    p = float(probs[ans_ids[0]]) if ans_ids else float(probs.max())
+    return answer, p
 
 
 # ============================================================
@@ -98,14 +116,14 @@ for a in range(1, 13):
             torch.tensor([ids], device=DEV), output_hidden_states=True
         )
     states[a] = (
-        out.hidden_states[28][0, -1, :].float().cpu().detach().clone()
+        out.hidden_states[_sl(28)[0]][0, -1, :].float().cpu().detach().clone()
     )
     top1, p = get_top1(expr)
     print(f"  {expr} -> {top1} (expected {a+b_fixed})")
     del out
 
 # Pairwise cosines
-print("\nPairwise cosine matrix (L28):")
+print(f"\nPairwise cosine matrix (L{_sl(28)[0]}):")
 print("     ", end="")
 for a2 in range(1, 13):
     print(f" {a2:>4}", end="")
@@ -184,7 +202,7 @@ ops = {
     "*": lambda a, b: a * b,
 }
 
-# Compare 5+3 vs 5-3 vs 5*3 at L28
+# Compare 5+3 vs 5-3 vs 5*3 at scaled L28
 for op_sym, op_fn in ops.items():
     expr = f"5 {op_sym} 3 ="
     expected = op_fn(5, 3)
@@ -201,7 +219,7 @@ for op_sym in ["+", "-", "*"]:
             torch.tensor([ids], device=DEV), output_hidden_states=True
         )
     op_states[op_sym] = (
-        out.hidden_states[28][0, -1, :].float().cpu().detach().clone()
+        out.hidden_states[_sl(28)[0]][0, -1, :].float().cpu().detach().clone()
     )
     print(f"  Tokens for '{expr}': "
           f"{[tok.decode([t]).strip() for t in ids]}")
@@ -227,7 +245,7 @@ v, i = torch.topk(ld, 6)
 top = ", ".join(tok.decode([int(i[j])]).strip()[:12] for j in range(6))
 v, i = torch.topk(ld, 6, largest=False)
 bot = ", ".join(tok.decode([int(i[j])]).strip()[:12] for j in range(6))
-print(f"\n  5+3 vs 5-3 contrast (L28):")
+print(f"\n  5+3 vs 5-3 contrast (L{_sl(28)[0]}):")
 print(f"    + pole: [{top}]")
 print(f"    - pole: [{bot}]")
 
@@ -238,7 +256,7 @@ v, i = torch.topk(ld, 6)
 top = ", ".join(tok.decode([int(i[j])]).strip()[:12] for j in range(6))
 v, i = torch.topk(ld, 6, largest=False)
 bot = ", ".join(tok.decode([int(i[j])]).strip()[:12] for j in range(6))
-print(f"\n  5+3 vs 5*3 contrast (L28):")
+print(f"\n  5+3 vs 5*3 contrast (L{_sl(28)[0]}):")
 print(f"    + pole: [{top}]")
 print(f"    * pole: [{bot}]")
 

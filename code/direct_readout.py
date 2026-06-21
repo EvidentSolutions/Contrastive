@@ -23,9 +23,10 @@ except Exception:
     pass
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import os
 
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
-MODEL = "microsoft/phi-2"
+MODEL = os.environ.get("MODEL", "microsoft/phi-2")
 
 CASES = {
     "car+broken":  "His car was broken, so he",
@@ -56,6 +57,10 @@ def main():
 
     NL = model.config.num_hidden_layers
     W_U = model.lm_head.weight.detach()
+
+    def _sl(*layers):
+        """Scale layer indices from 32-layer base to current NL."""
+        return sorted(set(min(round(l * NL / 32), NL) for l in layers))
 
     # Get token IDs for probe words
     probe_ids = {}
@@ -143,7 +148,7 @@ def main():
     print("  Δ_object = logit(token, car+X) - logit(token, phone+X)")
     print("  If compositional, Δ_object should be same for X=broken and X=stolen")
 
-    for L in [16, 24, 32]:
+    for L in _sl(16, 24, 32):
         print(f"\n  Layer {L}:")
         print(f"  {'token':>12} | {'Δ(broken)':>10} {'Δ(stolen)':>10} {'diff':>8} | "
               f"{'Δ_event(car)':>12} {'Δ_event(phn)':>12} {'diff':>8}")
@@ -175,7 +180,7 @@ def main():
     print("PART 3: Where do content tokens rank in the individual logit lens?")
     print("  (rank out of 51200 — how far from the top)")
 
-    for L in [16, 24, 32]:
+    for L in _sl(16, 24, 32):
         print(f"\n  Layer {L}:")
         print(f"  {'token':>12} | {'car+broken':>12} {'car+stolen':>12} "
               f"{'phone+broken':>12} {'phone+stolen':>12}")
@@ -196,11 +201,11 @@ def main():
 
     # === Part 4: Logit lens top-10 for each state at L24 ===
     print(f"\n{'='*120}")
-    print("PART 4: Full logit-lens top-10 for each state at L24")
+    print(f"PART 4: Full logit-lens top-10 for each state at L{_sl(24)[0]}")
     print("  (what the logit lens sees — the shared state)")
 
     for key in CASES:
-        h = outs[key].hidden_states[24][0, -1, :]
+        h = outs[key].hidden_states[_sl(24)[0]][0, -1, :]
         logits = h @ W_U.T
         vals, idxs = torch.topk(logits, 10)
         top10 = [(tok.decode([int(idxs[i])]).strip()[:15],

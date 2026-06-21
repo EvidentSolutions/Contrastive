@@ -15,9 +15,10 @@ except Exception:
     pass
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import os
 
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
-MODEL = "microsoft/phi-2"
+MODEL = os.environ.get("MODEL", "microsoft/phi-2")
 
 # 2x2 grids: (label, template, axis1_values, axis2_values)
 # template has {a1} and {a2} slots
@@ -123,6 +124,10 @@ def main():
     NL = model.config.num_hidden_layers
     W_U = model.lm_head.weight.detach()
 
+    def _sl(*layers):
+        """Scale layer indices from 32-layer base to current NL."""
+        return sorted(set(min(round(l * NL / 32), NL) for l in layers))
+
     for label, template, (v1a, v1b), (v2a, v2b) in GRIDS:
         # Generate 4 prompts
         prompts = {
@@ -156,7 +161,7 @@ def main():
         pred_tokens = {k: preds[k][0][0] for k in keys}
 
         # Show all 6 pairwise contrasts, but compact
-        print(f"\n  Pairwise trajectories (L16, L24, L32):")
+        print(f"\n  Pairwise trajectories ({', '.join(f'L{l}' for l in _sl(16, 24, 32))}):")
         for (k1, k2) in combinations(keys, 2):
             same = "=" if pred_tokens[k1] == pred_tokens[k2] else "≠"
             # What differs between k1 and k2?
@@ -173,7 +178,7 @@ def main():
             print(f"    \"{prompts[k1]}\"")
             print(f"    \"{prompts[k2]}\"")
 
-            for L in [16, 24, 32]:
+            for L in _sl(16, 24, 32):
                 h_x = outs[k1].hidden_states[L][0, -1, :]
                 h_y = outs[k2].hidden_states[L][0, -1, :]
                 dh = h_x - h_y

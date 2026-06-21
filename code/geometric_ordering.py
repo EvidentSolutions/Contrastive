@@ -15,9 +15,10 @@ except Exception:
     pass
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import os
 
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
-MODEL = "microsoft/phi-2"
+MODEL = os.environ.get("MODEL", "microsoft/phi-2")
 
 
 def main():
@@ -31,6 +32,10 @@ def main():
 
     NL = model.config.num_hidden_layers
     W_U = model.lm_head.weight.detach()
+
+    def _sl(*layers):
+        """Scale layer indices from 32-layer base to current NL."""
+        return sorted(set(min(round(l * NL / 32), NL) for l in layers))
 
     prompts = {
         "A>B>C": "Alice is taller than Bob. Bob is taller than Carol.",
@@ -49,7 +54,7 @@ def main():
     w_bob = W_U[bob_id].float().cpu()
     w_carol = W_U[carol_id].float().cpu()
 
-    for L in [16, 24, 28, 32]:
+    for L in _sl(16, 24, 28, 32):
         print(f"\n{'='*100}")
         print(f"Layer {L}")
         print(f"{'='*100}")
