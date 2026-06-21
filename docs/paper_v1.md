@@ -456,7 +456,7 @@ extracted from two different content fillers. We test 15 axes across four models
 
 Axes partition into three tiers:
 
-**Tier 1: Universal, token-readable** (cos > 0.7 in all four models).
+**Tier 1: Cross-family, token-readable** (cos > 0.7 in all four models).
 Eight axes exceed 0.7 consistency in all four models, though some weaken at
 scale: code/natural language (0.88–0.95), positive/negated (0.84–0.90),
 past/future (0.81–0.89), English/French (0.83–0.98, declines at scale),
