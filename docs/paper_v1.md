@@ -50,8 +50,14 @@ The logit lens (nostalgebraist 2020) and tuned lens (Belrose et al. 2023)
 project individual hidden states through W_U. At intermediate layers they decode
 to shared function words — the same for both "hot dog" and "cold dog." The
 contrastive projection subtracts one state from the other before projecting,
-revealing the content that separates the two inputs but that neither
-constituent's logit lens can see.
+revealing content that separates the two inputs. We verify this directly: at
+layers 8–24 for the hot dog case, the logit lens on both constituents reads
+"not, no, made, a, more" (shared function words), while the contrastive
+projection reads "fried, crispy, delicious, flavor" — food vocabulary that
+appears in neither constituent's top-20 (0/5 overlap at every layer through
+L24). Across five cases, contrastive top-5 tokens overlap with the
+constituent's logit-lens top-20 at 0–1/5 for mid-layers, rising to 1–3/5
+only at L28+ where the prediction has crystallized.
 
 The probe is mechanical: given two inputs, subtract their hidden states at each
 layer and project the difference through W_U. The most positive tokens
