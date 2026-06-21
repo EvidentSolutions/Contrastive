@@ -599,8 +599,7 @@ off to heavier tools for causal verification.
 - **LayerNorm bypassed.** We skip the final LayerNorm, so W_U receives
   vectors at the wrong scale. Token rankings are empirically invariant to this
   choice, but raw contrastive norms are not comparable across layers due to
-  residual-stream norm growth. Cross-layer norm comparisons use the relative
-  norm ||Δh|| / ||h_c||.
+  residual-stream norm growth.
 - **W_U readability not guaranteed.** The difference of two states was never
   trained for W_U projection. Token labels at intermediate layers are W_U's
   nearest-neighbour assignments, not verified names for model computations.
@@ -613,10 +612,7 @@ off to heavier tools for causal verification.
   component is necessary, not merely correlated. We verify causality via
   activation patching for the hot dog case (§4.1) and via injection recovery
   for four cases (§3.1), but the per-head decomposition (§5) is observational.
-- **Tokenization for per-position reading.** Reading the contrast at the
-  final position (the prediction site) works regardless of how the two inputs
-  tokenize, since causal attention aggregates all preceding content. The
-  per-position trace (§2.2) requires that the read position corresponds to the
+- **Tokenization for per-position reading.** The per-position trace (§2.2) requires that the read position corresponds to the
   same structural role in both inputs — e.g., "dog" must be at the same
   position in both prompts. This is naturally satisfied by minimal pairs that
   differ in one token.
