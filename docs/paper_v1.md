@@ -346,20 +346,12 @@ multiple heads (H21, H7, H0), consistent with the factual content spreading
 from a concentrated source to a broader representation — though this is a
 single case and the spreading pattern is not causally verified.
 
-**Factual vs fictional:** "The capital of France is" vs "The capital of Narnia
-is" — the model predicts "Paris" and "Cair Paravel" respectively. The
-contrastive reads "Paris, France, Berlin" on the factual pole, cleanly
-separating real from fictional recall.
-
-**Factual vs obscure:** The model correctly predicts obscure capitals
-(Burkina Faso → Ouagadougou, Kyrgyzstan → Bishkek, Tuvalu → Funafuti). The
-contrastive between known and obscure facts reads geographic context on each
-pole: "Paris, Madrid, London" vs "Ghana, Niger, Bolivia" for France vs
-Burkina Faso.
-
-**"Einstein developed the theory of" vs "Glorb developed the theory of":**
-- L24: "Einstein, Albert, relativity" on the factual pole
-- The imaginary entity produces no specific factual content
+**Different factual domains:** "The capital of France is" vs "The capital of
+Japan is" — the contrastive reads "Paris, France, French" on the France pole
+and "Japanese, Japan, Tokyo" on the Japan pole. Each entity's associated
+knowledge cluster appears on its respective side. The contrastive projection
+reads the difference between two retrievals, not a property of either
+retrieval in isolation.
 
 ### 5.3 Successor heads and temporal structure
 
