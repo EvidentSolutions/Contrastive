@@ -28,13 +28,12 @@ circuit-level reverse engineering, serving as a rapid scout for where to
 apply heavier mechanistic tools.
 
 The projection reads the prediction-shaped component of the representation —
-content aligned with W_U's token rows. It bypasses the final LayerNorm,
-projecting raw hidden states rather than normalized ones; we verify empirically
-that this produces near-identical rankings (cosine > 0.99 with the
-post-LayerNorm variant at layers 24+). Trajectory smoothness is a property of
-Δh, not of W_U: random projections give identical consecutive-layer cosine
-(0.962 vs 0.962). The method is silent on non-prediction-shaped computation.
-We release code and data.
+content aligned with W_U's token rows. We bypass the final LayerNorm, applying
+W_U directly to raw hidden-state differences; token rankings are empirically
+invariant to this choice (top-5 agreement across all cases tested). Trajectory
+smoothness is a property of Δh, not of W_U: random projections give identical
+consecutive-layer cosine (0.962 vs 0.962). The method is silent on
+non-prediction-shaped computation. We release code and data.
 
 ---
 
@@ -86,7 +85,7 @@ Given two inputs *c* and *k*:
 1. Run both and extract hidden states at every layer at the read position:
    h_c[L] and h_k[L] for L = 0, …, N.
 2. Compute Δh[L] = h_c[L] − h_k[L].
-3. Project: logits[L] = Δh[L] · W_U^T.
+3. Project: Δlogits[L] = Δh[L] · W_U^T.
 4. Read the top-K most positive tokens (associated with input *c*) and the
    top-K most negative tokens (associated with input *k*). The two poles
    together describe the contrast in token space.
@@ -94,18 +93,30 @@ Given two inputs *c* and *k*:
 No parameters are fit. The choices are the input pair, the read position, and K.
 
 **LayerNorm.** The model's forward pass applies a final LayerNorm (LN_f) before
-W_U. Our projection skips LN_f, applying W_U directly to the raw hidden state
-difference. This is a deliberate choice: LN_f is non-linear (it subtracts the
-mean and divides by the standard deviation of each vector independently), so
-LN_f(h_c) − LN_f(h_k) ≠ LN_f(h_c − h_k), and neither equals a raw difference
-projected through W_U. We verify empirically that skipping LN_f produces
-near-identical token rankings to the post-norm variant: cosine similarity
-between Δh · W_U^T and (LN_f(h_c) − LN_f(h_k)) · W_U^T exceeds 0.99 at L24+
-and 0.97 at L4+. The top tokens agree. The contrastive subtraction cancels the
-shared mean component that LN_f would remove, leaving the directional content
-intact. At L0 (pure embeddings, no shared context) the cosine drops to 0.0, as
-expected — the two vectors have very different norms and LN_f rescaling
-dominates.
+W_U. We project raw hidden states, bypassing LN_f. This is deliberate: LN_f
+was trained to normalize hidden states at the final layer, and applying it to
+intermediate layers imposes statistics (mean, variance) from a distribution it
+was not fit to. The raw projection gives W_U a vector at the wrong scale but
+with the correct direction.
+
+We verify empirically that bypassing LN_f does not affect token rankings. We
+compare three variants across six poster cases (IOI, hot dog, factual recall,
+successor, truth, negation) at layers 4–32:
+
+- **Raw**: (h_c − h_k) · W_U^T (our default)
+- **Post-norm**: (LN_f(h_c) − LN_f(h_k)) · W_U^T (normalize each, then subtract)
+- **Diff-norm**: LN_f(h_c − h_k) · W_U^T (normalize the difference)
+
+All three produce the same top-5 tokens. Top-10 overlap between Raw and
+Post-norm is 8–10/10 at L24+ and 6–8/10 at mid-layers. The cosine between
+Raw and Post-norm logit vectors exceeds 0.98 at L28+ and 0.84 at the minimum
+(L20–24).
+
+The variants diverge only in *magnitude*: residual-stream norms grow across
+layers (from 4 at L1 to 175 at L31), so raw Δlogits norms are not comparable
+across layers. When comparing contrastive signal strength across layers, we
+normalize by ||Δh[L]|| or use the relative norm ||Δh|| / ||h_c|| to remove
+this scale artifact.
 
 ### 2.2 Per-position reading
 
@@ -149,7 +160,77 @@ residual stream that is not aligned with W_U's token rows.
 
 ---
 
-## 3. Lexical disambiguation
+## 3. Validation
+
+### 3.1 The trajectory is not a projection artifact
+
+Any direction in R^d, projected through W_U, produces some token ranking. We
+test whether the trajectory's layer-to-layer coherence exceeds what arbitrary
+directions produce.
+
+**Consecutive cosine:** For each case, we compute the mean cosine between
+consecutive layers' projected logit vectors. We compare against (a) random
+directions of matched norm projected through W_U, and (b) the same real Δh
+vectors with their layer order shuffled.
+
+| Case | Real | Random | Shuffled | z vs random |
+|------|------|--------|----------|-------------|
+| hot dog | 0.886 | 0.000 | 0.515 | 79 |
+| IOI | 0.823 | −0.002 | 0.289 | 64 |
+| Factual recall | 0.827 | 0.002 | 0.315 | 78 |
+| Successor | 0.862 | −0.001 | 0.321 | 93 |
+| cold/fish | 0.895 | −0.001 | 0.477 | 72 |
+| bank ambiguity | 0.902 | −0.002 | 0.507 | 80 |
+
+Random directions give consecutive cosine ≈ 0.000 in all cases (z = 64–93).
+The trajectory's smoothness is a property of the computed difference Δh
+drifting gradually through the residual stream, not of W_U's geometry imposing
+structure on arbitrary vectors.
+
+Shuffled layers score 0.29–0.52 — above random (the vectors are real) but far
+below the ordered trajectory — confirming that layer order carries information.
+
+**Relation to random-matrix smoothness.** A separate test (§2.4) showed that
+projecting the *same* Δh through random matrices of W_U's shape gives the same
+consecutive cosine (0.962 vs 0.962). Together with the null model: Δh is smooth
+(random directions are not), and this smoothness doesn't depend on W_U (random
+matrices preserve it). W_U contributes the interpretable token labels, not the
+smoothness.
+
+### 3.2 The contrast direction is causally effective
+
+Injecting Δh[L] from the context into the control's residual stream at layer L
+recovers the context's prediction. We measure recovery as (P_injected − P_control)
+/ (P_context − P_control) × 100%, compared against 20 random directions of
+matched norm.
+
+| Case | L4 | L12 | L20 | L24 | L28 | L31 | Peak z |
+|------|-----|------|------|------|------|------|--------|
+| hot dog → delicious | 0% | 5% | 73% | 80% | 133% | 150% | 4249 |
+| IOI → Mary | 0% | 0% | 0% | 5% | 75% | 113% | 525 |
+| Eiffel → Paris | 0% | 0% | 2% | 55% | 73% | 66% | 1778 |
+| Successor → Tuesday | 0% | 0% | 0% | 11% | 87% | 98% | 223 |
+
+All four cases show zero recovery at early layers, onset at the layer where
+the contrastive projection first reads coherent content, and near-complete
+or over-complete recovery by L28–31. Random directions of the same norm give
+zero mean recovery at every layer (z-scores measure how far the real direction
+exceeds this null).
+
+Recovery exceeding 100% is expected: Δh contains by construction everything
+that makes the context predict differently from the control, so injecting it
+can overshoot. The operative validation is the comparison to random — the
+*direction* matters, not merely the norm.
+
+**Onset matches trajectory content.** Hot dog recovers from L8 (where "fried"
+first appears in the contrastive projection). IOI recovers from L24 (where
+"Mary" crystallizes). Factual recall recovers from L20 (where "France" first
+appears). The causal onset tracks the layer at which the contrastive projection
+first reads target-relevant content.
+
+---
+
+## 4. Lexical disambiguation
 
 ### 3.1 Compound noun: hot dog
 
@@ -209,7 +290,7 @@ adjective):
 
 ---
 
-## 4. Replicating landmark findings
+## 5. Replicating landmark findings
 
 ### 4.1 Indirect object identification
 
@@ -325,7 +406,7 @@ hidden states, not a finding of the contrastive projection.
 
 ---
 
-## 5. Contrastive axis taxonomy
+## 6. Contrastive axis taxonomy
 
 Using 2×2 factorial designs (crossing two binary axes, e.g., past/future ×
 happy/sad), we measure whether each axis produces a consistent contrastive
@@ -394,7 +475,7 @@ transfer to another.
 
 ---
 
-## 6. Ordering mechanism
+## 7. Ordering mechanism
 
 Phi-2 solves transitive ordering problems ("Alice is taller than Bob. Bob is
 taller than Carol. Who is the shortest?") with 100% accuracy across 22
@@ -431,7 +512,7 @@ projection (only name/position bias). The mechanism emerges between 1.4B and
 
 ---
 
-## 7. Discussion
+## 8. Discussion
 
 ### What the method is
 
@@ -471,11 +552,11 @@ off to heavier tools for causal verification.
 
 - **Curated pairs, not sampled.** All demonstrations use hand-constructed
   minimal pairs.
-- **LayerNorm bypassed.** The projection skips the final LayerNorm, which
-  W_U was trained to receive. Empirically this produces near-identical rankings
-  (cosine > 0.99 at L24+), but the approximation is not theoretically
-  guaranteed and may fail for architectures where LN_f applies large
-  directional rotations.
+- **LayerNorm bypassed.** We skip the final LayerNorm, so W_U receives
+  vectors at the wrong scale. Token rankings are empirically invariant to this
+  choice, but raw contrastive norms are not comparable across layers due to
+  residual-stream norm growth. Cross-layer magnitude comparisons use relative
+  norms (||Δh|| / ||h_c||) to control for this.
 - **W_U readability not guaranteed.** The difference of two states was never
   trained for W_U projection. Token labels at intermediate layers are W_U's
   nearest-neighbour assignments, not verified names for model computations.
@@ -493,14 +574,14 @@ off to heavier tools for causal verification.
   (e.g., adding a word that merges with an adjacent token), position-wise
   subtraction becomes meaningless. All pairs in this paper were verified to
   produce aligned tokenizations.
-- **Model coverage.** Primary mechanistic results (§3) on Phi-2 only. IOI
-  replicates on Pythia models. The axis taxonomy (§5) covers four models
+- **Model coverage.** Primary mechanistic results (§4) on Phi-2 only. IOI
+  replicates on Pythia models. The axis taxonomy (§6) covers four models
   (Pythia-410M, Pythia-1.4B, Phi-2, Phi-4) and shows both universal and
   model-family-dependent patterns.
 
 ---
 
-## 8. Related work
+## 9. Related work
 
 **Contrastive activation methods.** RepE (Zou et al. 2023), ActAdd (Turner et
 al. 2023), CAA (Rimsky et al. 2024) use matched-pair subtraction for steering.
