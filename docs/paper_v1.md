@@ -10,41 +10,31 @@ We describe a training-free method for reading how a transformer's internal
 representation differs between two inputs. Subtracting hidden states at each
 layer and projecting through the unembedding matrix W_U yields a contrastive
 trajectory — a layer-by-layer readout of what separates the two residual
-streams in token space. The method requires one matrix multiply, no probes to
-train, and no learned parameters.
+streams in token space. The method requires one matrix multiply per
+layer-position pair, no probes to train, and no learned parameters.
 
-We demonstrate the method on Phi-2 (2.7B) across four domains:
+We demonstrate the method on Phi-2 (2.7B) as an exploratory tool that
+pinpoints where and when the model computes specific distinctions:
 
 **Lexical disambiguation.** "The hot dog was" vs "The cold dog was" — the
 contrastive projection traces compound-noun recognition to a specific position
-and layer. At the "dog" position, food vocabulary ("fried") first appears at L5.
-Attention weights confirm a two-hop chain: "dog" reads "hot" at L0, then "was"
-reads the compound from "dog" at L5-6. Activation patching at the "dog"
-position eliminates the food signal entirely.
+and layer. Activation patching confirms the traced circuit.
 
-**Indirect object identification.** "John and Mary went to the store. John gave
-a book to" — the IO name (Mary) emerges at L24 in the contrastive projection.
-Tested on 30 name/template combinations: 100% correct on Phi-2, 100% on
-Pythia-1.4B, 97% on Pythia-410M.
+**Replication of landmark findings.** The method recovers the key observations
+from IOI circuit analysis (IO name crystallizes at L24; per-head decomposition
+identifies name-mover heads), factual recall tracing, and successor head
+identification. It locates the same phenomena that previously required
+circuit-level reverse engineering, serving as a rapid scout for where to
+apply heavier mechanistic tools.
 
-**Factual recall.** "The Eiffel Tower is in" vs "The Colosseum is in" — the
-contrastive reads "Paris, France" vs "Rome, Roma" at L24-28. When contrasted
-against fictional entities ("The Crystal Palace of Zoria"), the factual content
-separates cleanly from the fictional confabulation.
-
-**Circular successor representation.** "After January comes" for all twelve
-months: the hidden states at L28 form a near-perfect circle in 2D PCA, with
-angular steps averaging 30° (= 360°/12). Days of the week show the same
-circular structure at ~51° steps (= 360°/7), with larger jumps at the
-workweek/weekend boundary. This replicates, via a training-free method, the
-Fourier features previously found only through circuit analysis of grokked
-models.
-
-The contrastive projection reads the prediction-shaped component of the
-representation — content aligned with W_U's token space. Trajectory smoothness
-is a property of the difference vector Δh, not of W_U: random projections give
-identical consecutive-layer cosine (0.962 vs 0.962). The method is silent on
-non-prediction-shaped computation. We release code and data.
+The projection reads the prediction-shaped component of the representation —
+content aligned with W_U's token rows. It bypasses the final LayerNorm,
+projecting raw hidden states rather than normalized ones; we verify empirically
+that this produces near-identical rankings (cosine > 0.99 with the
+post-LayerNorm variant at layers 24+). Trajectory smoothness is a property of
+Δh, not of W_U: random projections give identical consecutive-layer cosine
+(0.962 vs 0.962). The method is silent on non-prediction-shaped computation.
+We release code and data.
 
 ---
 
@@ -65,22 +55,25 @@ revealing the content that separates the two inputs but that neither
 constituent's logit lens can see.
 
 The probe is mechanical: given two inputs, subtract their hidden states at each
-layer and project the difference through W_U. The top tokens at each layer are
-the trajectory. We make two claims:
+layer and project the difference through W_U. The most positive tokens
+identify content associated with input *c*; the most negative identify content
+associated with input *k*. Together, the two poles at each layer form the
+trajectory. We make two claims:
 
 1. **Descriptive.** The difference between two matched inputs, projected through
    W_U at each layer and position, reads coherent token-space content that
    changes across layers. The content is set by the chosen pair; the
    model-relevant observations are the layer-wise dynamics and the per-position
    information flow.
-2. **Mechanistic.** By reading the contrast at every position, we can trace
+2. **Exploratory.** By reading the contrast at every position, we can locate
    which position first computes a meaning distinction, which component
    (attention or MLP) contributes it, and how information flows between
-   positions. This replicates, without training, findings that previously
-   required circuit analysis.
+   positions. This provides the "where and when" — pinpointing exactly where
+   to apply heavier tools like activation patching or circuit analysis to
+   establish the "how."
 
-All primary results use Phi-2 (Microsoft, 2.7B parameters, 32 layers).
-Cross-model replication on Pythia-410M and Pythia-1.4B is reported for IOI.
+Primary results use Phi-2 (Microsoft, 2.7B parameters, 32 layers).
+Cross-model replication uses Pythia-410M, Pythia-1.4B, and Phi-4 (14B).
 
 ---
 
@@ -94,9 +87,25 @@ Given two inputs *c* and *k*:
    h_c[L] and h_k[L] for L = 0, …, N.
 2. Compute Δh[L] = h_c[L] − h_k[L].
 3. Project: logits[L] = Δh[L] · W_U^T.
-4. Read the top-K tokens (the contrast in token space).
+4. Read the top-K most positive tokens (associated with input *c*) and the
+   top-K most negative tokens (associated with input *k*). The two poles
+   together describe the contrast in token space.
 
 No parameters are fit. The choices are the input pair, the read position, and K.
+
+**LayerNorm.** The model's forward pass applies a final LayerNorm (LN_f) before
+W_U. Our projection skips LN_f, applying W_U directly to the raw hidden state
+difference. This is a deliberate choice: LN_f is non-linear (it subtracts the
+mean and divides by the standard deviation of each vector independently), so
+LN_f(h_c) − LN_f(h_k) ≠ LN_f(h_c − h_k), and neither equals a raw difference
+projected through W_U. We verify empirically that skipping LN_f produces
+near-identical token rankings to the post-norm variant: cosine similarity
+between Δh · W_U^T and (LN_f(h_c) − LN_f(h_k)) · W_U^T exceeds 0.99 at L24+
+and 0.97 at L4+. The top tokens agree. The contrastive subtraction cancels the
+shared mean component that LN_f would remove, leaving the directional content
+intact. At L0 (pure embeddings, no shared context) the cosine drops to 0.0, as
+expected — the two vectors have very different norms and LN_f rescaling
+dominates.
 
 ### 2.2 Per-position reading
 
@@ -220,12 +229,25 @@ projection at the prediction site.
 - L24: IO names appear ("Mary, Mary" vs "John, John")
 - L28: fully crystallized ("Mary, Mary, mary" vs "John, John, john")
 
+**Per-head decomposition at L24:** Decomposing the attention output by head
+identifies which heads carry the IO name. Three heads dominate consistently
+across three name pairs (John/Mary, Alice/Bob, Dan/Eve):
+
+| Head | John/Mary (norm) | Alice/Bob | Dan/Eve | Content |
+|------|-----------------|-----------|---------|---------|
+| H14 | 8.3 | — | 11.4 | IO name (MD/Mary, de/draw) |
+| H1 | 7.5 | 5.9 | 7.0 | IO name (Mary, Bob, ever/ves) |
+| H16 | 3.4 | 4.5 | 12.8 | IO name (Mary, Bob, Eve) |
+
+These heads have the largest contrastive norms at L24 and read IO-name tokens
+when projected through W_U. No other head exceeds norm 3.0 consistently. This
+identifies candidate name-mover heads — the same functional role found by Wang
+et al.'s circuit analysis — using only contrastive projection. Causal
+verification (e.g., ablating these heads) would be needed to confirm they are
+necessary for the computation.
+
 **Accuracy:** 30/30 across 5 name pairs × 3 templates on Phi-2 (100%),
 30/30 on Pythia-1.4B (100%), 29/30 on Pythia-410M (97%).
-
-The method sees the same phenomenon as Wang et al. — the IO name
-crystallizes in the residual stream — without circuit analysis, attention head
-identification, or activation patching.
 
 ### 4.2 Factual recall
 
@@ -235,76 +257,140 @@ identification, or activation patching.
 - L20: "French, France" vs "ancient, Roman, Alexandria"
 - L28: "French, Paris" vs "Rome, Roma, Gladiator"
 
+**Per-head decomposition:** At L24, H13 carries the factual content (norm=3.9,
+reads "France, French, Paris"). At L28, the signal distributes across multiple
+heads (H21, H7, H0) — suggesting factual recall crystallizes in a few heads at
+L24 then broadcasts.
+
 **Factual vs fictional:** "The capital of France is" vs "The capital of Narnia
 is" — the model predicts "Paris" and "Cair Paravel" respectively. The
 contrastive reads "Paris, France, Berlin" on the factual pole, cleanly
 separating real from fictional recall.
 
+**Factual vs obscure:** The model correctly predicts obscure capitals
+(Burkina Faso → Ouagadougou, Kyrgyzstan → Bishkek, Tuvalu → Funafuti). The
+contrastive between known and obscure facts reads geographic context on each
+pole: "Paris, Madrid, London" vs "Ghana, Niger, Bolivia" for France vs
+Burkina Faso.
+
 **"Einstein developed the theory of" vs "Glorb developed the theory of":**
 - L24: "Einstein, Albert, relativity" on the factual pole
 - The imaginary entity produces no specific factual content
 
-### 4.3 Circular successor representation
+### 4.3 Successor heads and temporal structure
 
-**Design:** Run "After [X] comes" for all twelve months; extract hidden states
-at L28; perform PCA.
-
-**Finding:** The twelve months form a near-perfect circle in the top-2 PCA
-subspace.
-
-| Month | Angle | Step |
-|-------|-------|------|
-| January | +98.7° | |
-| February | +69.3° | −29.3° |
-| March | +43.4° | −25.9° |
-| April | +6.8° | −36.6° |
-| May | −19.6° | −26.4° |
-| June | −33.3° | −13.7° |
-| July | −76.3° | −43.1° |
-| August | −102.3° | −25.9° |
-| September | −137.6° | −35.3° |
-| October | −155.1° | −17.5° |
-| November | +169.2° | −35.6° |
-| December | +146.7° | −22.6° |
-
-Mean angular step: −30.0° (= 360°/12). The progression is monotonically
-clockwise through 360°.
-
-Days of the week show the same circular structure at ~51° steps (= 360°/7),
-with larger jumps at Thursday→Friday (88°) and Sunday→Monday (74°) — the
-workweek/weekend boundary.
-
-All successors are predicted correctly, including the wrap-around:
+All successors are predicted correctly, including wrap-arounds:
 "After Saturday comes" → Sunday; "After Sunday comes" → Monday;
 "After December comes" → January.
 
-The circular structure in W_U-projected space replicates, via a training-free
-method, the Fourier features previously found only through weight-level
-analysis of grokked models (Nanda et al. 2023, Zhong et al. 2024).
+**Contrastive trajectory:** Contrasting consecutive successors (e.g., "After
+Monday comes" vs "After Tuesday comes"), the contrastive projection at L24
+reads the input day name on its respective pole ("Monday" tokens positive,
+"Tuesday" negative). By L28 the successor day appears: "Tuesday" on the
+Monday pole, "Wednesday" on the Tuesday pole. The successor computation is
+visible as the transition from input-day to output-day content across layers.
+
+**Per-head decomposition at L28:** Decomposing the contrastive signal by
+attention head identifies H11 as the dominant successor head. Its contrastive
+norm reveals a discontinuity at the weekend boundary:
+
+| Day pair | H11 norm | Next-largest head |
+|----------|----------|------------------|
+| Mon→Tue | 2 | H20 (3) |
+| Tue→Wed | 3 | H20 (3) |
+| Wed→Thu | 3 | H20 (2) |
+| Thu→Fri | 4 | H20 (5) |
+| Fri→Sat | 4 | H25 (3) |
+| **Sat→Sun** | **11** | H12 (4) |
+| **Sun→Mon** | **11** | H12 (5) |
+
+H11's norm triples at the weekend boundary. The same head dominates
+month-pair contrasts at L28, with norms 3-9 across all twelve transitions.
+
+**Circular geometry in the residual stream.** Separately from the contrastive
+method, we examine the raw hidden states for all twelve months at L28 via PCA.
+This analysis operates in the residual stream (R^2560), not in W_U-projected
+token space, and does not use the contrastive projection. The twelve months
+form a near-perfect circle in the top-2 PCA subspace, with mean angular step
+−30.0° (= 360°/12), progressing monotonically clockwise through 360°. Days of
+the week show the same circular structure at ~51° steps (= 360°/7).
+
+This circular geometry connects to the Fourier features found by Nanda et al.
+(2023) in grokked models and the clock/pizza representations of Zhong et al.
+(2024), suggesting circular temporal structure is present in large pretrained
+models. The contrastive method's contribution here is the per-head
+decomposition that identifies H11 as the successor head and reveals the
+discontinuity structure; the circular geometry itself is a property of the
+hidden states, not a finding of the contrastive projection.
 
 ---
 
-## 5. Syntactic and semantic axes
+## 5. Contrastive axis taxonomy
 
-### 5.1 Grammatical features
+Using 2×2 factorial designs (crossing two binary axes, e.g., past/future ×
+happy/sad), we measure whether each axis produces a consistent contrastive
+direction across content. Consistency is the cosine between the axis direction
+extracted from two different content fillers. We test 15 axes across four models
+(Pythia-410M, Pythia-1.4B, Phi-2, Phi-4).
 
-Contrastive directions extracted from minimal pairs ("The dog was" vs "The dogs
-were") reveal consistent syntactic axes:
+### 5.1 Three tiers of axis consistency
 
-| Feature | Training cos | Transfer cos | Axis stable? |
-|---------|-------------|-------------|-------------|
-| Number | 0.62–0.88 | 0.45–0.86 | Yes |
-| Tense | 0.50–0.75 | 0.42–0.82 | Yes |
-| Gender | 0.40–0.76 | 0.20–0.79 | Moderate |
+Axes partition into three tiers:
 
-The three axes are approximately orthogonal (number-tense cos = −0.02,
-number-gender cos = +0.20, tense-gender cos = −0.02).
+**Tier 1: Universal, token-readable** (cos > 0.7 in all four models).
+Eight axes are consistent regardless of content or model scale: code/natural
+language (0.88–0.95), positive/negated (0.84–0.90), past/future (0.81–0.89),
+English/French (0.83–0.98), assignment/equality-test (0.79–0.92),
+CAPS/lowercase (0.71–0.87), doubt/certainty (0.71–0.96), claim/question
+(0.74–0.83). These axes are near-orthogonal to their content fillers
+(mean |cross-cosine| 0.06–0.14).
 
-### 5.2 Semantic features
+**Tier 2: Partially consistent** (cos 0.5–0.8 in some models).
+Four axes depend on model family or content: formal/informal (strong in
+Pythia, weak in Phi), thought/speech (moderate, reads as
+subjective-evaluation vs reporting), cause/effect (weakens at scale).
 
-Animacy and valence do not form consistent single directions — each noun pair
-reads its own content (dog/rock reads "barking, leash" vs "structure, built,"
-not a generic animacy axis).
+**Tier 3: Not a direction** (cos < 0.5 in all models).
+Four axes never form a consistent direction: animate/inanimate (0.34–0.48),
+active/passive (0.17–0.65, entangles with content), literal/metaphorical
+(0.19–0.35, worsens at scale), salient-entity/generic (collapses to −0.12
+at Phi-4).
+
+### 5.2 Negation is not cancellation
+
+Projecting different negation types onto the contrastive `not` direction:
+
+| Negation | Pythia-1.4B | Phi-2 |
+|----------|-------------|-------|
+| not | +43 | +69 |
+| never | +36 | +63 |
+| no longer | +35 | +54 |
+| **not never** | **+35** | **+66** |
+| rarely | +22 | +49 |
+
+Double negation ("not never") does not cancel — it projects at 81–95% the
+strength of single "not." The model represents "not never" as emphatic
+negation. Each negation type has its own token readout: `not` reads as
+"not, NOT, Not"; `no longer` reads as "gone, now, replaced" (temporal
+displacement); `rarely` reads as "seldom, usually, often" (frequency scale).
+
+### 5.3 Metaphor is processed by domain routing, not a flag
+
+The literal/metaphorical axis has the lowest consistency (0.19–0.35) because
+metaphor is not a single direction. Instead, each metaphorical use routes to
+its target domain:
+
+| Contrast | Literal pole reads | Metaphor pole reads |
+|----------|-------------------|-------------------|
+| cold: ice vs reception | temperatures, 32°F | tense, gloomy, awkward |
+| sharp: knife vs criticism | blade, stainless | sarcastic, hostile |
+| bright: lamp vs student | blinding, illuminating | gifted, intellectual |
+
+The contrastive projection shows that the model processes metaphor by
+activating domain-specific tokens at mid-layers (L16–24), not by toggling a
+figurativity feature. This explains why metaphor does not form a linear axis
+and predicts that probing classifiers trained on one metaphor domain will not
+transfer to another.
 
 ---
 
@@ -314,20 +400,34 @@ Phi-2 solves transitive ordering problems ("Alice is taller than Bob. Bob is
 taller than Carol. Who is the shortest?") with 100% accuracy across 22
 variations (different names, properties, premise orders, distractors).
 
-**Representation:** At the chain-completion position, the bottom-of-chain
-entity has the highest logit (rank 1). The representation is scale-invariant
-(cos > 0.98 across taller/richer/older/faster/heavier/smarter).
+**Method:** We contrast all 6 permutations of the 3-entity ordering against
+each other and project through W_U at the final premise position and the
+answer position. For scale-invariance, we contrast the same ordering across
+different properties (e.g., "taller" vs "richer" with the same name
+assignments) and measure cosine similarity of the contrastive difference
+vectors.
 
-**Query mechanism:** The question word ("shortest" vs "tallest") encodes a
-semantic direction at the question position. At the answer position (L24), this
-direction selects the correct endpoint from the ordering representation.
+**Representation:** At the chain-completion position, the contrastive
+projection reads the bottom-of-chain entity as the top logit. The
+representation is scale-invariant: contrasting "Alice is taller than Bob" vs
+"Bob is taller than Alice" and the same pair with "richer" yields cosine > 0.98
+between the two contrastive vectors. PCA of the 6 permutations' hidden states
+reveals a 2D structure (SVD: 60% + 28%) where orderings sharing the same
+bottom entity cluster together.
+
+**Query mechanism:** Contrasting "Who is the shortest?" vs "Who is the
+tallest?" at the question position reads a semantic direction. At the answer
+position (L24), this direction selects the correct endpoint from the ordering
+representation.
 
 **Multi-scale limitation:** When two independent orderings are present
-(richness + height), the scale-invariant mechanism confuses them. The model
-cannot maintain two orderings simultaneously.
+(richness + height), the scale-invariant mechanism confuses them. The
+contrastive projection shows the model blending the two orderings rather than
+maintaining them separately.
 
-**Scaling:** Pythia-410M and 1.4B have no ordering mechanism (name/position
-bias). The mechanism emerges between 1.4B and 2.7B.
+**Scaling:** Pythia-410M and 1.4B show no ordering signal in the contrastive
+projection (only name/position bias). The mechanism emerges between 1.4B and
+2.7B.
 
 ---
 
@@ -335,11 +435,13 @@ bias). The mechanism emerges between 1.4B and 2.7B.
 
 ### What the method is
 
-A training-free readout of how two inputs differ in the residual stream, at each
-layer and position, in token space. One matrix multiply on a difference vector.
-The method traces information flow (per-position reading), identifies components
-(attention vs MLP decomposition), and reads computed answers (answer tokens
-appear in the projection).
+A training-free exploratory tool for reading how two inputs differ in the
+residual stream, at each layer and position, in token space. One matrix
+multiply per layer-position pair on a difference vector. The method locates
+where a distinction first appears (per-position reading), which component
+writes it (attention vs MLP decomposition), and which head carries it
+(per-head decomposition). It provides the "where and when" of a computation,
+identifying targets for causal verification.
 
 ### What the method reads
 
@@ -354,21 +456,47 @@ aligned with W_U is invisible to the projection. The method's silence on a
 direction does not imply the direction is absent — only that W_U cannot decode
 it.
 
+### Relationship to circuit analysis
+
+The contrastive projection locates phenomena; circuit analysis explains them.
+Wang et al. (2023) mapped the full IOI computational subgraph, identifying
+specific heads (e.g., S-inhibition heads, name-mover heads) and their causal
+roles. Our method recovers the same name-mover heads (H14, H1, H16 at L24)
+by contrastive norm, but does not establish their causal roles — that requires
+activation patching or path patching. The method is closest to causal tracing
+(Meng et al. 2022): it identifies where information concentrates, then hands
+off to heavier tools for causal verification.
+
 ### Limitations
 
 - **Curated pairs, not sampled.** All demonstrations use hand-constructed
   minimal pairs.
+- **LayerNorm bypassed.** The projection skips the final LayerNorm, which
+  W_U was trained to receive. Empirically this produces near-identical rankings
+  (cosine > 0.99 at L24+), but the approximation is not theoretically
+  guaranteed and may fail for architectures where LN_f applies large
+  directional rotations.
 - **W_U readability not guaranteed.** The difference of two states was never
   trained for W_U projection. Token labels at intermediate layers are W_U's
   nearest-neighbour assignments, not verified names for model computations.
 - **Smoothness is not W_U-specific.** Trajectory coherence (consecutive-layer
   cosine) is a property of Δh, not of W_U. This metric does not validate that
   W_U reads anything meaningful.
-- **Mechanistic claims require verification.** The per-position trace suggests
-  information flow paths; activation patching is needed to confirm causality.
-  We verify the hot dog case; other cases are traced but not patched.
-- **Single model.** Primary results on Phi-2 only. IOI replicates on Pythia
-  models.
+- **Exploratory, not causal.** The per-position trace suggests information
+  flow paths; the per-head decomposition identifies large contributors. Neither
+  establishes causality. Activation patching is required to confirm that a
+  component is necessary, not merely correlated. We verify the hot dog case;
+  other cases are traced but not patched.
+- **Tokenization alignment.** The method requires that the two inputs align
+  at the token level — position *p* must correspond to the same structural role
+  in both inputs. If a minimal-pair change shifts tokenization boundaries
+  (e.g., adding a word that merges with an adjacent token), position-wise
+  subtraction becomes meaningless. All pairs in this paper were verified to
+  produce aligned tokenizations.
+- **Model coverage.** Primary mechanistic results (§3) on Phi-2 only. IOI
+  replicates on Pythia models. The axis taxonomy (§5) covers four models
+  (Pythia-410M, Pythia-1.4B, Phi-2, Phi-4) and shows both universal and
+  model-family-dependent patterns.
 
 ---
 
@@ -385,18 +513,18 @@ individual states through W_U. The contrastive projection reads the content
 that differs between two inputs — a different subspace from what the logit lens
 shows for either input individually.
 
-**Circuit analysis.** Wang et al. (2023) reverse-engineered the IOI circuit in
-GPT-2. Nanda et al. (2023) found Fourier features in grokked models. Gould et
-al. (2024) identified successor heads. Meng et al. (2022) traced factual
-recall. Our method replicates key findings from these papers using a single,
-training-free technique.
+**Circuit analysis and causal tracing.** Wang et al. (2023) reverse-engineered
+the IOI circuit in GPT-2 via path patching. Meng et al. (2022) used causal
+tracing to localize factual associations. Gould et al. (2024) identified
+successor heads. Our method recovers the key observational findings from these
+papers (which layers, which heads, which content) but does not establish
+causality — it is an exploratory complement to these causal techniques.
 
 **Grokking and circular representations.** Nanda et al. (2023) found that
 grokked models use Fourier features for modular arithmetic. Zhong et al. (2024)
-showed clock and pizza representations. Our finding that month and day-of-week
-representations form circles in the W_U-projected space connects to this work,
-suggesting that circular temporal structure is present even in large pretrained
-models, not only in small grokked ones.
+showed clock and pizza representations. Our PCA of month hidden states at L28
+finds the same circular geometry in a large pretrained model, connecting
+grokking results to natural language representations.
 
 ---
 
