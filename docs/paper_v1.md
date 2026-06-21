@@ -1,6 +1,6 @@
 # Contrastive Projection: A Training-Free Probe for Reading Transformer Internals
 
-**Olli Tuomi**, [Affiliation]
+**Olli Tuomi**, Evident Solutions Oy
 
 ---
 
@@ -618,7 +618,7 @@ off to heavier tools for causal verification.
   differ in one token.
 - **Model coverage.** Primary mechanistic results (§4) on Phi-2 only. IOI
   replicates on Pythia models. The axis taxonomy (§6) covers four models
-  (Pythia-410M, Pythia-1.4B, Phi-2, Phi-4) and shows both universal and
+  (Pythia-410M, Pythia-1.4B, Phi-2, Phi-4) and shows both similar and
   model-family-dependent patterns.
 
 ---
