@@ -197,7 +197,10 @@ def main():
         p.requires_grad_(False)
 
     NL = model.config.num_hidden_layers
-    W_U = model.lm_head.weight.detach()
+    if hasattr(model, "lm_head"):
+        W_U = model.lm_head.weight.detach()
+    else:
+        W_U = model.embed_out.weight.detach()  # Pythia
 
     def _sl(*layers):
         return sorted(set(min(round(l * NL / 32), NL) for l in layers))
