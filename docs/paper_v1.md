@@ -28,14 +28,12 @@ circuit-level reverse engineering, serving as a rapid scout for where to
 apply heavier mechanistic tools.
 
 The projection reads the prediction-shaped component of the representation —
-content aligned with W_U's token rows. We bypass the final LayerNorm, applying
-W_U directly to raw hidden-state differences; token rankings are empirically
-invariant to this choice (top-5 agreement across all cases tested). Trajectory
-smoothness is a general property of the residual stream (unrelated pairs are
-equally smooth), not a validation of content; the content validation comes from
-causal injection (z = 223–4249 across four cases) and logit-lens invisibility
-(0/5 overlap at mid-layers). The method is silent on non-prediction-shaped
-computation. We release code and data.
+content aligned with W_U's token rows. We bypass the final LayerNorm; token
+rankings are empirically invariant to this choice. Content validation comes
+from causal injection (z = 223–4249 across four cases) and logit-lens
+invisibility (contrastive top-5 absent from both constituents' top-20 at
+mid-layers). The method is silent on non-prediction-shaped computation. We
+release code and data.
 
 ---
 
@@ -162,12 +160,10 @@ reports as token labels at intermediate layers are not predictions but
 continuation preparations: tokens the model might produce at the current or
 future positions, modulated by context.
 
-Trajectory smoothness (consecutive-layer cosine ~0.9) is a general property
-of the residual stream: even unrelated input pairs produce smooth trajectories
-(§3.1). The smoothness validates that Δh is structured (not random noise), but
-does not validate that the token-space labels at each layer are meaningful.
-W_U contributes the interpretable token labels; the causal injection test
-(§3.2) validates that the identified subspace is causally relevant.
+W_U contributes the interpretable token labels. Trajectory smoothness is a
+general property of the residual stream, not a validation of content (§3.1).
+The causal injection test (§3.2) validates that the identified subspace is
+causally relevant.
 
 The method is silent on non-prediction-shaped computation — structure in the
 residual stream that is not aligned with W_U's token rows.
@@ -176,40 +172,17 @@ residual stream that is not aligned with W_U's token rows.
 
 ## 3. Validation
 
-### 3.1 The trajectory is structured, not an artifact
+### 3.1 Smoothness is not a validation of content
 
-Any direction in R^d, projected through W_U, produces some token ranking. We
-test what properties of the trajectory are specific to our minimal pairs versus
-general properties of the residual stream.
-
-**Consecutive cosine** (mean cosine between consecutive layers' projected logit
-vectors) under four conditions:
-
-| Condition | Mean cosine | Interpretation |
-|-----------|-------------|---------------|
-| Random directions | ≈ 0.000 (z = 64–93) | Δh has structure, not noise |
-| Shuffled layers | 0.29–0.52 | Layer order carries information |
-| **Unrelated pairs** | **0.92–0.95** | ANY Δh is smooth |
-| Minimal pairs | 0.82–0.90 | Our pairs are slightly less smooth |
-
-**Smoothness is residual stream inertia, not a validation of content.** The Δh
-between completely unrelated inputs ("The hot dog was" vs "Quantum mechanics
-is") has *higher* consecutive cosine (0.95) than our minimal pairs (0.89).
-This is because both residual streams evolve gradually through the network, so
-their difference drifts gradually regardless of whether the inputs are related.
-
-Our minimal pairs are slightly *less* smooth than unrelated pairs because the
-content actively changes at disambiguation and crystallization layers — the
-consecutive cosine dips where the representation shifts (e.g., at L5 where
-"fried" first appears in the hot dog case).
-
-**What smoothness validates:** The trajectory is not random noise (random
-directions give cos ≈ 0, z = 64–93) and layer order matters (shuffled vectors
-score 0.29–0.52). **What smoothness does not validate:** that the token-space
-content at each layer is meaningful. Any two inputs produce a smooth trajectory.
-The validation of content comes from the causal injection test (§3.2), the
-logit-lens invisibility comparison (§1), and the semantic coherence of the
-per-head decomposition (§5).
+Trajectory smoothness (consecutive-layer cosine ~0.9) is a general property of
+the residual stream. Unrelated pairs ("The hot dog was" vs "Quantum mechanics
+is") are equally smooth (mean 0.93 ± 0.01, N=40) as minimal pairs (0.88 ±
+0.03, N=6) — in fact slightly smoother, because unrelated inputs diverge
+diffusely across many orthogonal directions, while minimal pairs diverge along
+a focused axis that shifts at specific layers. Random directions give cosine
+≈ 0.00 (z = 64–93), confirming Δh is structured rather than noise, but this
+does not distinguish meaningful from arbitrary contrasts. The validation of
+content comes from causal injection (§3.2) and logit-lens invisibility (§1).
 
 ### 3.2 The subspace identified by the probe contains the causal mechanism
 
