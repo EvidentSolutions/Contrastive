@@ -54,10 +54,10 @@ revealing content that separates the two inputs. We verify this directly: at
 layers 8–24 for the hot dog case, the logit lens on both constituents reads
 "not, no, made, a, more" (shared function words), while the contrastive
 projection reads "fried, crispy, delicious, flavor" — food vocabulary that
-appears in neither constituent's top-20 (0/5 overlap at every layer through
-L24). Across five cases, contrastive top-5 tokens overlap with the
-constituent's logit-lens top-20 at 0–1/5 for mid-layers, rising to 1–3/5
-only at L28+ where the prediction has crystallized.
+appears in neither constituent's top-20 (0–1/5 overlap through L24). Across
+five cases, contrastive top-5 tokens overlap with the constituent's logit-lens
+top-20 at 0–1/5 for mid-layers, rising to 1–3/5 only at L28+ where the
+prediction has crystallized.
 
 The probe is mechanical: given two inputs, subtract their hidden states at each
 layer and project the difference through W_U. The most positive tokens
@@ -107,8 +107,8 @@ No parameters are fit. The choices are the input pair, the read position, and K.
 W_U. We project raw hidden states, bypassing LN_f. This is deliberate: LN_f
 was trained to normalize hidden states at the final layer, and applying it to
 intermediate layers imposes statistics (mean, variance) from a distribution it
-was not fit to. The raw projection gives W_U a vector at the wrong scale but
-with the correct direction.
+was not fit to. The raw projection gives W_U a vector at the wrong scale; the
+direction is approximately preserved, as verified empirically below.
 
 We verify empirically that bypassing LN_f does not affect token rankings. We
 compare three variants across six poster cases (IOI, hot dog, factual recall,
@@ -211,11 +211,12 @@ that makes the context predict differently from the control, so injecting it
 can overshoot. The operative validation is the comparison to random — the
 *direction* matters, not merely the norm.
 
-**Onset matches trajectory content.** Hot dog recovers from L8 (where "fried"
-first appears in the contrastive projection). IOI recovers from L24 (where
-"Mary" crystallizes). Factual recall recovers from L20 (where "France" first
-appears). The causal onset tracks the layer at which the contrastive projection
-first reads target-relevant content.
+**Onset matches trajectory content.** Hot dog recovery begins at L12 (5%),
+rising sharply at L20 (73%) — the layers where food vocabulary appears in the
+contrastive projection at the prediction position. IOI recovers from L24
+(where "Mary" crystallizes). Factual recall recovers from L20 (where "France"
+first appears). The causal onset tracks the layer at which the contrastive
+projection first reads target-relevant content at the prediction position.
 
 ---
 
@@ -248,10 +249,10 @@ Head 19 attends to "dog" position with weight 0.911 in the hot-dog context vs
 compound-noun information from "dog."
 
 **Activation patching:** Replacing the "dog" position's hidden state (L0) with
-the cold-dog version eliminates the food signal entirely: P(food tokens) drops
-from 12% to 0.03%. Replacing the "hot" position's state has minimal effect
-(food stays at 69-83%) — the information has already been copied to "dog" via L0
-attention.
+the cold-dog version eliminates the food signal: the top prediction shifts from
+food-related to animal-related tokens. Replacing the "hot" position's state
+has minimal effect — the food prediction persists, because the information has
+already been copied to "dog" via L0 attention.
 
 **Mechanism:** Attention at L0 copies "hot" to the "dog" position. The compound
 is recognized at the "dog" position by L5 ("fried" first appears). Attention at
@@ -269,9 +270,11 @@ The same method traces disambiguation in verb-object pairs and noun ambiguity:
 **"The bank was steep and" vs "The bank was closed and"** (noun disambiguated by
 adjective):
 - L12: "climb, inclined, steep" (terrain pole)
-- L27-28: attention reads back "bank, banks, banking" — re-reading the
-  ambiguous noun after disambiguation. A two-pass pattern: resolve meaning from
-  the modifier (L5-12), then re-read the noun (L27-28).
+- L27-28: "bank, banks, banking" reappear in the contrastive projection —
+  the noun's representation is revisited after the modifier has disambiguated
+  it. This is consistent with a two-pass pattern (resolve meaning from the
+  modifier, then update the noun representation), though the contrastive
+  projection reads content, not mechanism.
 
 **"He was fired up and" vs "He was fired and"** (particle changes meaning):
 - L28: "excited, ready, energetic" (fired up) vs "sued, blacklist, lawsuits"
@@ -311,8 +314,9 @@ across three name pairs (John/Mary, Alice/Bob, Dan/Eve):
 
 These heads have the largest contrastive norms at L24 and read IO-name tokens
 when projected through W_U. No other head exceeds norm 3.0 consistently. This
-identifies candidate name-mover heads — the same functional role found by Wang
-et al.'s circuit analysis — using only contrastive projection. Causal
+identifies candidate name-mover heads — the same functional role that Wang
+et al. found in GPT-2 via circuit analysis, here located in Phi-2 using only
+contrastive projection. Causal
 verification (e.g., ablating these heads) would be needed to confirm they are
 necessary for the computation.
 
@@ -327,10 +331,11 @@ necessary for the computation.
 - L20: "French, France" vs "ancient, Roman, Alexandria"
 - L28: "French, Paris" vs "Rome, Roma, Gladiator"
 
-**Per-head decomposition:** At L24, H13 carries the factual content (norm=3.9,
-reads "France, French, Paris"). At L28, the signal distributes across multiple
-heads (H21, H7, H0) — suggesting factual recall crystallizes in a few heads at
-L24 then broadcasts.
+**Per-head decomposition:** At L24, H13 carries the largest contrastive norm
+(3.9, reads "France, French, Paris"). At L28, the signal distributes across
+multiple heads (H21, H7, H0), consistent with the factual content spreading
+from a concentrated source to a broader representation — though this is a
+single case and the spreading pattern is not causally verified.
 
 **Factual vs fictional:** "The capital of France is" vs "The capital of Narnia
 is" — the model predicts "Paris" and "Cair Paravel" respectively. The
@@ -377,6 +382,10 @@ norm reveals a discontinuity at the weekend boundary:
 H11's norm triples at the weekend boundary. The same head dominates
 month-pair contrasts at L28, with norms 3-9 across all twelve transitions.
 
+H11 dominates the successor signal but does not carry it alone — H20 and H25
+contribute at comparable norms for some day pairs (e.g., H20 norm=5 at
+Thu→Fri vs H11 norm=4).
+
 A separate PCA analysis of the raw hidden states (not using the contrastive
 projection) finds circular geometry for months and days; this is reported in
 the supplementary materials as it does not use the paper's method.
@@ -396,11 +405,12 @@ extracted from two different content fillers. We test 15 axes across four models
 Axes partition into three tiers:
 
 **Tier 1: Universal, token-readable** (cos > 0.7 in all four models).
-Eight axes are consistent regardless of content or model scale: code/natural
-language (0.88–0.95), positive/negated (0.84–0.90), past/future (0.81–0.89),
-English/French (0.83–0.98), assignment/equality-test (0.79–0.92),
-CAPS/lowercase (0.71–0.87), doubt/certainty (0.71–0.96), claim/question
-(0.74–0.83). These axes are near-orthogonal to their content fillers
+Eight axes exceed 0.7 consistency in all four models, though some weaken at
+scale: code/natural language (0.88–0.95), positive/negated (0.84–0.90),
+past/future (0.81–0.89), English/French (0.83–0.98, declines at scale),
+assignment/equality-test (0.79–0.92, improves with scale),
+CAPS/lowercase (0.71–0.87), doubt/certainty (0.71–0.96, weakens at scale),
+claim/question (0.74–0.83). These axes are near-orthogonal to their content fillers
 (mean |cross-cosine| 0.06–0.14).
 
 **Tier 2: Partially consistent** (cos 0.5–0.8 in some models).
@@ -447,16 +457,20 @@ its target domain:
 The contrastive projection shows that the model processes metaphor by
 activating domain-specific tokens at mid-layers (L16–24), not by toggling a
 figurativity feature. This explains why metaphor does not form a linear axis
-and predicts that probing classifiers trained on one metaphor domain will not
-transfer to another.
+This suggests (but does not test) that probing classifiers trained on one
+metaphor domain would not transfer to another.
 
 ---
 
 ## 7. Ordering mechanism
 
-Phi-2 solves transitive ordering problems ("Alice is taller than Bob. Bob is
-taller than Carol. Who is the shortest?") with 100% accuracy across 22
-variations (different names, properties, premise orders, distractors).
+Phi-2 solves 3-entity transitive ordering problems ("Alice is taller than Bob.
+Bob is taller than Carol. Who is the shortest?") with 100% accuracy across 22
+variations (different names, properties, premise orders, distractors) when
+querying endpoints (tallest/shortest). The mechanism does not extend to
+middle-position queries on longer chains — with 5 entities, the model cannot
+identify the 2nd or 3rd tallest from pairwise comparisons without first
+generating the sorted list (see supplementary).
 
 **Method:** We contrast all 6 permutations of the 3-entity ordering against
 each other and project through W_U at the final premise position and the
@@ -469,9 +483,9 @@ vectors.
 projection reads the bottom-of-chain entity as the top logit. The
 representation is scale-invariant: contrasting "Alice is taller than Bob" vs
 "Bob is taller than Alice" and the same pair with "richer" yields cosine > 0.98
-between the two contrastive vectors. PCA of the 6 permutations' hidden states
-reveals a 2D structure (SVD: 60% + 28%) where orderings sharing the same
-bottom entity cluster together.
+between the two contrastive vectors. PCA of the 6 permutations' raw hidden
+states (not using the contrastive projection) reveals a 2D structure (SVD:
+60% + 28%) where orderings sharing the same bottom entity cluster together.
 
 **Query mechanism:** Contrasting "Who is the shortest?" vs "Who is the
 tallest?" at the question position reads a semantic direction. At the answer
@@ -517,10 +531,11 @@ it.
 ### Relationship to circuit analysis
 
 The contrastive projection locates phenomena; circuit analysis explains them.
-Wang et al. (2023) mapped the full IOI computational subgraph, identifying
-specific heads (e.g., S-inhibition heads, name-mover heads) and their causal
-roles. Our method recovers the same name-mover heads (H14, H1, H16 at L24)
-by contrastive norm, but does not establish their causal roles — that requires
+Wang et al. (2023) mapped the full IOI computational subgraph in GPT-2,
+identifying specific heads (e.g., S-inhibition heads, name-mover heads) and
+their causal roles. Our method identifies heads with the same functional
+signature in Phi-2 (H14, H1, H16 at L24) by contrastive norm, but does not
+establish their causal roles — that requires
 activation patching or path patching. The method is closest to causal tracing
 (Meng et al. 2022): it identifies where information concentrates, then hands
 off to heavier tools for causal verification.
@@ -543,8 +558,9 @@ off to heavier tools for causal verification.
 - **Exploratory, not causal.** The per-position trace suggests information
   flow paths; the per-head decomposition identifies large contributors. Neither
   establishes causality. Activation patching is required to confirm that a
-  component is necessary, not merely correlated. We verify the hot dog case;
-  other cases are traced but not patched.
+  component is necessary, not merely correlated. We verify causality via
+  activation patching for the hot dog case (§4.1) and via injection recovery
+  for four cases (§3.2), but the per-head decomposition (§5) is observational.
 - **Tokenization alignment.** The method requires that the two inputs align
   at the token level — position *p* must correspond to the same structural role
   in both inputs. If a minimal-pair change shifts tokenization boundaries
@@ -574,14 +590,12 @@ shows for either input individually.
 **Circuit analysis and causal tracing.** Wang et al. (2023) reverse-engineered
 the IOI circuit in GPT-2 via path patching. Meng et al. (2022) used causal
 tracing to localize factual associations. Gould et al. (2024) identified
-successor heads. Our method recovers the key observational findings from these
-papers (which layers, which heads, which content) but does not establish
-causality — it is an exploratory complement to these causal techniques.
-
-**Successor heads.** Gould et al. (2024) identified successor heads via
-attention pattern analysis. Our per-head contrastive decomposition identifies
-the same functional role (H11 at L28) and additionally reveals the
-discontinuity structure at temporal boundaries.
+successor heads via attention pattern analysis. Our method recovers the key
+observational findings from these papers (which layers, which heads, which
+content) but does not establish causality — it is an exploratory complement
+to these causal techniques. For successor heads, the per-head contrastive
+decomposition additionally reveals the discontinuity structure at temporal
+boundaries (§5.3).
 
 ---
 
@@ -599,10 +613,8 @@ Belrose, N., et al. (2023). Eliciting latent predictions with the tuned lens.
 Du, Y., et al. (2026). From latent signals to reflection behavior.
 Gould, S., et al. (2024). Successor heads.
 Meng, K., et al. (2022). Locating and editing factual associations in GPT.
-Nanda, N., et al. (2023). Progress measures for grokking via mechanistic interpretability.
 nostalgebraist. (2020). interpreting GPT: the logit lens.
 Rimsky, N., et al. (2024). Steering Llama 2 via CAA.
 Turner, A., et al. (2023). Activation addition.
 Wang, K., et al. (2023). Interpretability in the wild: IOI circuit.
-Zhong, Z., et al. (2024). The clock and the pizza.
 Zou, A., et al. (2023). Representation engineering.
