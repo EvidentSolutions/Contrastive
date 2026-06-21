@@ -31,9 +31,11 @@ The projection reads the prediction-shaped component of the representation —
 content aligned with W_U's token rows. We bypass the final LayerNorm, applying
 W_U directly to raw hidden-state differences; token rankings are empirically
 invariant to this choice (top-5 agreement across all cases tested). Trajectory
-smoothness is a property of Δh, not of W_U: random projections give identical
-consecutive-layer cosine (0.962 vs 0.962). The method is silent on
-non-prediction-shaped computation. We release code and data.
+smoothness is a general property of the residual stream (unrelated pairs are
+equally smooth), not a validation of content; the content validation comes from
+causal injection (z = 223–4249 across four cases) and logit-lens invisibility
+(0/5 overlap at mid-layers). The method is silent on non-prediction-shaped
+computation. We release code and data.
 
 ---
 
@@ -63,7 +65,12 @@ The probe is mechanical: given two inputs, subtract their hidden states at each
 layer and project the difference through W_U. The most positive tokens
 identify content associated with input *c*; the most negative identify content
 associated with input *k*. Together, the two poles at each layer form the
-trajectory. We make two claims:
+trajectory. The arithmetic is identical to taking a RepE/ActAdd steering vector
+(Zou et al. 2023; Turner et al. 2023) and reading it through a logit lens
+(nostalgebraist 2020). The novelty is not the math but the systematization:
+per-position tracing, per-head decomposition, and the use of this operation as
+a diagnostic trajectory across all layers rather than a one-shot steering
+direction. We make two claims:
 
 1. **Descriptive.** The difference between two matched inputs, projected through
    W_U at each layer and position, reads coherent token-space content that
@@ -155,11 +162,12 @@ reports as token labels at intermediate layers are not predictions but
 continuation preparations: tokens the model might produce at the current or
 future positions, modulated by context.
 
-Trajectory smoothness (consecutive-layer cosine) is a property of Δh drifting
-gradually in the residual stream, not a property of W_U. Random projections of
-the same shape give identical smoothness (mean cosine 0.962 for both W_U and
-random at L9+). The interpretable token labels are W_U's contribution; the
-smoothness is not.
+Trajectory smoothness (consecutive-layer cosine ~0.9) is a general property
+of the residual stream: even unrelated input pairs produce smooth trajectories
+(§3.1). The smoothness validates that Δh is structured (not random noise), but
+does not validate that the token-space labels at each layer are meaningful.
+W_U contributes the interpretable token labels; the causal injection test
+(§3.2) validates that the identified subspace is causally relevant.
 
 The method is silent on non-prediction-shaped computation — structure in the
 residual stream that is not aligned with W_U's token rows.
@@ -168,47 +176,49 @@ residual stream that is not aligned with W_U's token rows.
 
 ## 3. Validation
 
-### 3.1 The trajectory is not a projection artifact
+### 3.1 The trajectory is structured, not an artifact
 
 Any direction in R^d, projected through W_U, produces some token ranking. We
-test whether the trajectory's layer-to-layer coherence exceeds what arbitrary
-directions produce.
+test what properties of the trajectory are specific to our minimal pairs versus
+general properties of the residual stream.
 
-**Consecutive cosine:** For each case, we compute the mean cosine between
-consecutive layers' projected logit vectors. We compare against (a) random
-directions of matched norm projected through W_U, and (b) the same real Δh
-vectors with their layer order shuffled.
+**Consecutive cosine** (mean cosine between consecutive layers' projected logit
+vectors) under four conditions:
 
-| Case | Real | Random | Shuffled | z vs random |
-|------|------|--------|----------|-------------|
-| hot dog | 0.886 | 0.000 | 0.515 | 79 |
-| IOI | 0.823 | −0.002 | 0.289 | 64 |
-| Factual recall | 0.827 | 0.002 | 0.315 | 78 |
-| Successor | 0.862 | −0.001 | 0.321 | 93 |
-| cold/fish | 0.895 | −0.001 | 0.477 | 72 |
-| bank ambiguity | 0.902 | −0.002 | 0.507 | 80 |
+| Condition | Mean cosine | Interpretation |
+|-----------|-------------|---------------|
+| Random directions | ≈ 0.000 (z = 64–93) | Δh has structure, not noise |
+| Shuffled layers | 0.29–0.52 | Layer order carries information |
+| **Unrelated pairs** | **0.92–0.95** | ANY Δh is smooth |
+| Minimal pairs | 0.82–0.90 | Our pairs are slightly less smooth |
 
-Random directions give consecutive cosine ≈ 0.000 in all cases (z = 64–93).
-The trajectory's smoothness is a property of the computed difference Δh
-drifting gradually through the residual stream, not of W_U's geometry imposing
-structure on arbitrary vectors.
+**Smoothness is residual stream inertia, not a validation of content.** The Δh
+between completely unrelated inputs ("The hot dog was" vs "Quantum mechanics
+is") has *higher* consecutive cosine (0.95) than our minimal pairs (0.89).
+This is because both residual streams evolve gradually through the network, so
+their difference drifts gradually regardless of whether the inputs are related.
 
-Shuffled layers score 0.29–0.52 — above random (the vectors are real) but far
-below the ordered trajectory — confirming that layer order carries information.
+Our minimal pairs are slightly *less* smooth than unrelated pairs because the
+content actively changes at disambiguation and crystallization layers — the
+consecutive cosine dips where the representation shifts (e.g., at L5 where
+"fried" first appears in the hot dog case).
 
-**Relation to random-matrix smoothness.** A separate test (§2.4) showed that
-projecting the *same* Δh through random matrices of W_U's shape gives the same
-consecutive cosine (0.962 vs 0.962). Together with the null model: Δh is smooth
-(random directions are not), and this smoothness doesn't depend on W_U (random
-matrices preserve it). W_U contributes the interpretable token labels, not the
-smoothness.
+**What smoothness validates:** The trajectory is not random noise (random
+directions give cos ≈ 0, z = 64–93) and layer order matters (shuffled vectors
+score 0.29–0.52). **What smoothness does not validate:** that the token-space
+content at each layer is meaningful. Any two inputs produce a smooth trajectory.
+The validation of content comes from the causal injection test (§3.2), the
+logit-lens invisibility comparison (§1), and the semantic coherence of the
+per-head decomposition (§5).
 
-### 3.2 The contrast direction is causally effective
+### 3.2 The subspace identified by the probe contains the causal mechanism
 
-Injecting Δh[L] from the context into the control's residual stream at layer L
-recovers the context's prediction. We measure recovery as (P_injected − P_control)
-/ (P_context − P_control) × 100%, compared against 20 random directions of
-matched norm.
+The probe is exploratory — it reads a difference, not a cause. But we can test
+whether the subspace it identifies contains causally relevant information by
+injecting Δh[L] from the context into the control's residual stream at layer L
+and measuring how much of the prediction gap it recovers: (P_injected −
+P_control) / (P_context − P_control) × 100%, compared against 20 random
+directions of matched norm.
 
 | Case | L4 | L12 | L20 | L24 | L28 | L31 | Peak z |
 |------|-----|------|------|------|------|------|--------|
@@ -238,7 +248,7 @@ first reads target-relevant content.
 
 ## 4. Lexical disambiguation
 
-### 3.1 Compound noun: hot dog
+### 4.1 Compound noun: hot dog
 
 **Prompts:**
 - "The hot dog was" (food item)
@@ -275,7 +285,7 @@ is recognized at the "dog" position by L5 ("fried" first appears). Attention at
 L5-6 reads this from "dog" to "was." The model's food/animal disambiguation is
 a two-hop attention chain: hot→dog (L0), dog→was (L5).
 
-### 3.2 Other disambiguation cases
+### 4.2 Other disambiguation cases
 
 The same method traces disambiguation in verb-object pairs and noun ambiguity:
 
@@ -298,7 +308,7 @@ adjective):
 
 ## 5. Replicating landmark findings
 
-### 4.1 Indirect object identification
+### 5.1 Indirect object identification
 
 The IOI circuit (Wang et al. 2023) identifies how GPT-2 resolves which name a
 pronoun refers to. We replicate the core finding with the contrastive method.
@@ -336,7 +346,7 @@ necessary for the computation.
 **Accuracy:** 30/30 across 5 name pairs × 3 templates on Phi-2 (100%),
 30/30 on Pythia-1.4B (100%), 29/30 on Pythia-410M (97%).
 
-### 4.2 Factual recall
+### 5.2 Factual recall
 
 **Design:** Contrast prompts requiring different factual answers.
 
@@ -364,7 +374,7 @@ Burkina Faso.
 - L24: "Einstein, Albert, relativity" on the factual pole
 - The imaginary entity produces no specific factual content
 
-### 4.3 Successor heads and temporal structure
+### 5.3 Successor heads and temporal structure
 
 All successors are predicted correctly, including wrap-arounds:
 "After Saturday comes" → Sunday; "After Sunday comes" → Monday;
@@ -394,21 +404,9 @@ norm reveals a discontinuity at the weekend boundary:
 H11's norm triples at the weekend boundary. The same head dominates
 month-pair contrasts at L28, with norms 3-9 across all twelve transitions.
 
-**Circular geometry in the residual stream.** Separately from the contrastive
-method, we examine the raw hidden states for all twelve months at L28 via PCA.
-This analysis operates in the residual stream (R^2560), not in W_U-projected
-token space, and does not use the contrastive projection. The twelve months
-form a near-perfect circle in the top-2 PCA subspace, with mean angular step
-−30.0° (= 360°/12), progressing monotonically clockwise through 360°. Days of
-the week show the same circular structure at ~51° steps (= 360°/7).
-
-This circular geometry connects to the Fourier features found by Nanda et al.
-(2023) in grokked models and the clock/pizza representations of Zhong et al.
-(2024), suggesting circular temporal structure is present in large pretrained
-models. The contrastive method's contribution here is the per-head
-decomposition that identifies H11 as the successor head and reveals the
-discontinuity structure; the circular geometry itself is a property of the
-hidden states, not a finding of the contrastive projection.
+A separate PCA analysis of the raw hidden states (not using the contrastive
+projection) finds circular geometry for months and days; this is reported in
+the supplementary materials as it does not use the paper's method.
 
 ---
 
@@ -420,7 +418,7 @@ direction across content. Consistency is the cosine between the axis direction
 extracted from two different content fillers. We test 15 axes across four models
 (Pythia-410M, Pythia-1.4B, Phi-2, Phi-4).
 
-### 5.1 Three tiers of axis consistency
+### 6.1 Three tiers of axis consistency
 
 Axes partition into three tiers:
 
@@ -443,7 +441,7 @@ active/passive (0.17–0.65, entangles with content), literal/metaphorical
 (0.19–0.35, worsens at scale), salient-entity/generic (collapses to −0.12
 at Phi-4).
 
-### 5.2 Negation is not cancellation
+### 6.2 Negation is not cancellation
 
 Projecting different negation types onto the contrastive `not` direction:
 
@@ -461,7 +459,7 @@ negation. Each negation type has its own token readout: `not` reads as
 "not, NOT, Not"; `no longer` reads as "gone, now, replaced" (temporal
 displacement); `rarely` reads as "seldom, usually, often" (frequency scale).
 
-### 5.3 Metaphor is processed by domain routing, not a flag
+### 6.3 Metaphor is processed by domain routing, not a flag
 
 The literal/metaphorical axis has the lowest consistency (0.19–0.35) because
 metaphor is not a single direction. Instead, each metaphorical use routes to
@@ -607,11 +605,10 @@ successor heads. Our method recovers the key observational findings from these
 papers (which layers, which heads, which content) but does not establish
 causality — it is an exploratory complement to these causal techniques.
 
-**Grokking and circular representations.** Nanda et al. (2023) found that
-grokked models use Fourier features for modular arithmetic. Zhong et al. (2024)
-showed clock and pizza representations. Our PCA of month hidden states at L28
-finds the same circular geometry in a large pretrained model, connecting
-grokking results to natural language representations.
+**Successor heads.** Gould et al. (2024) identified successor heads via
+attention pattern analysis. Our per-head contrastive decomposition identifies
+the same functional role (H11 at L28) and additionally reveals the
+discontinuity structure at temporal boundaries.
 
 ---
 
