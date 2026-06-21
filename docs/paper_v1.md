@@ -349,11 +349,63 @@ single case and the spreading pattern is not causally verified.
 **Different factual domains:** "The capital of France is" vs "The capital of
 Japan is" — the contrastive reads "Paris, France, French" on the France pole
 and "Japanese, Japan, Tokyo" on the Japan pole. Each entity's associated
-knowledge cluster appears on its respective side. The contrastive projection
-reads the difference between two retrievals, not a property of either
-retrieval in isolation.
+knowledge cluster appears on its respective side.
 
-### 5.3 Successor heads and temporal structure
+### 5.3 Factual recall vs hallucination
+
+When the model hallucinates — producing a confident but fabricated answer for
+a fictional entity — the contrastive projection reveals what the model has
+retrieved: specific facts for real entities, and nothing beyond name fragments
+for fictional ones.
+
+**Design:** We construct matched pairs where one prompt elicits genuine recall
+and the other elicits hallucination, keeping the frame identical:
+
+| Real prompt | Prediction | Fictional prompt | Prediction |
+|-------------|-----------|-----------------|-----------|
+| Nikola Tesla, born in 1856, invented the | Tesla coil... | Ludvig von Vogelkirche, born in 1859, invented the | first practical electric motor... |
+| Marie Curie, born in 1867, discovered | the elements polonium and radium... | Helena Brandström, born in 1871, discovered | a new species of moth... |
+
+Both sides produce confident, specific answers. But the contrastive projection
+at L28 reads different content on each pole:
+
+| Pair | Real pole (L28) | Fictional pole (L28) |
+|------|----------------|---------------------|
+| Tesla vs Vogelkirche | Tesla, alternating, Altern, electric | Vog, v, von, Von |
+| Curie vs Brandström | radio, Radio, Radiation, radioactive | Brand, M, H, a |
+
+The real pole reads *factual associations* (Tesla → alternating current,
+Curie → radioactivity). The fictional pole reads *name fragments* (Vog, von,
+Brand) — the model has retrieved nothing about the entity beyond the tokens
+of its name and their cultural associations.
+
+**Confirmation via entity-vs-generic contrast.** Contrasting each entity
+against a bare frame ("A person, born in 1856, invented the") isolates what
+the entity name adds. Tesla minus generic reads "Tesla, alternating, AC" at
+L28 — specific factual content. Vogelkirche minus generic reads "Vog, von,
+Von" — only name tokens. The hallucinated entity's representation contains
+no factual content beyond the name itself.
+
+**Contrastive norm.** The relative norm ||Δh||/||h|| at L28 is systematically
+larger for real-vs-fictional pairs (mean 0.98) than real-vs-real pairs (mean
+0.70). This is partly because fictional entities lack specific content to
+share with the real entity, and partly because the entities are less similar.
+
+**Entropy.** Real entities predict with lower entropy (H = 1.5–2.5) than
+fictional ones (H = 3.4–6.3), consistent with the model having specific
+knowledge to draw on. But entropy alone cannot distinguish "confident recall"
+from "confident hallucination" — the mountain case illustrates this: Mount
+Silverhorn (fictional) predicts "2,856 meters" with H = 2.8, similar to
+Mount Everest's H = 1.5. The contrastive projection shows the difference:
+Everest's pole reads "Nepal, Tibet, Himal" (geographic knowledge), while
+Silverhorn's reads "1300, 1100, 1200" (number-range priors calibrated to
+"Southern Alps," not specific factual recall).
+
+The contrastive projection does not detect a "hallucination flag." It reads
+what the model has retrieved, and for hallucinated entities, the retrieval is
+empty of factual content — only name tokens and contextual priors remain.
+
+### 5.4 Successor heads and temporal structure
 
 All successors are predicted correctly, including wrap-arounds:
 "After Saturday comes" → Sunday; "After Sunday comes" → Monday;
