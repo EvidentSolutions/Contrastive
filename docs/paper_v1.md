@@ -125,9 +125,8 @@ Raw and Post-norm logit vectors exceeds 0.98 at L28+ and 0.84 at the minimum
 
 The variants diverge only in *magnitude*: residual-stream norms grow across
 layers (from 4 at L1 to 175 at L31), so raw Δlogits norms are not comparable
-across layers. When comparing contrastive signal strength across layers, we
-normalize by ||Δh[L]|| or use the relative norm ||Δh|| / ||h_c|| to remove
-this scale artifact.
+across layers. This paper compares token rankings and per-head norms within
+a single layer, avoiding cross-layer magnitude comparisons.
 
 ### 2.2 Per-position reading
 
@@ -600,8 +599,7 @@ off to heavier tools for causal verification.
 - **LayerNorm bypassed.** We skip the final LayerNorm, so W_U receives
   vectors at the wrong scale. Token rankings are empirically invariant to this
   choice, but raw contrastive norms are not comparable across layers due to
-  residual-stream norm growth. Cross-layer magnitude comparisons use relative
-  norms (||Δh|| / ||h_c||) to control for this.
+  residual-stream norm growth. We avoid cross-layer magnitude comparisons.
 - **W_U readability not guaranteed.** The difference of two states was never
   trained for W_U projection. Token labels at intermediate layers are W_U's
   nearest-neighbour assignments, not verified names for model computations.
