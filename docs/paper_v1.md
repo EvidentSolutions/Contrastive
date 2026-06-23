@@ -211,10 +211,21 @@ decomposition) and inject only this token-subspace component. This recovers
 not where the causal content lives. (By contrast, injecting the full
 unrestricted Δh at the same layer recovers 69%, as in §3.1 — the causal
 content is present but not aligned with the loudest W_U directions.) The same
-case triangulated against five baselines (fish, ball, bus, thief, glimpse)
-yields a shared component reading "doctor, doctors, rest, see" that recovers
-77%. Multi-contrast averaging isolates the causal content that single-pair
-W_U projection misses (Table 1).
+case triangulated against five baselines yields a shared component reading
+"doctor, doctors, rest, see" that recovers 77%. The five baselines are:
+
+- "She caught a **fish** and went to" (physical catch)
+- "She caught a **ball** and went to" (physical catch)
+- "She caught a **bus** and went to" (transportation)
+- "She caught a **thief** and went to" (apprehension)
+- "She caught a **glimpse** and went to" (perception)
+
+Each baseline shares the "caught a ___" frame but differs in what was caught.
+The shared component across all five contrasts — what "cold" has that fish,
+ball, bus, thief, and glimpse do not — is the illness signal. Multi-contrast
+averaging isolates this from the pair-specific content (e.g., medical vs
+fishing in the cold/fish pair alone) that dominates the single-pair readout
+(Table 1).
 
 **Granularity.** Multi-contrast averaging recovers what is shared across
 baselines, but cannot determine whether the result is a single feature or
