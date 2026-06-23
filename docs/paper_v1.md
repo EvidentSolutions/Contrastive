@@ -1,4 +1,4 @@
-# Contrastive Projection: A Training-Free Probe for Reading Transformer Internals
+# Contrastive Projection: Reading Transformer Internals Through Desuperposition
 
 **Olli Tuomi**, Evident Solutions Oy
 
@@ -6,84 +6,86 @@
 
 ## Abstract
 
-We describe a training-free method for reading how a transformer's internal
-representation differs between two inputs. Subtracting hidden states at each
-layer and projecting through the unembedding matrix W_U yields a contrastive
-trajectory — a layer-by-layer readout of what separates the two residual
-streams in token space. The method requires one matrix multiply per
-layer-position pair, no probes to train, and no learned parameters.
+A transformer's residual stream carries multiple signals in superposition.
+The logit lens reads their incoherent sum; we subtract matched inputs before
+projecting, isolating the axis of variation. This contrastive projection —
+one matrix multiply per layer-position pair, no training — reads how two
+inputs differ in token space at every layer, producing a trajectory of
+the computation that separates them.
 
-We demonstrate the method on Phi-2 (2.7B) as an exploratory tool that
-pinpoints where and when the model computes specific distinctions:
+We validate in three ways. (1) Injecting the contrastive direction into the
+opposing input recovers the prediction gap (z = 223–4249 across four cases).
+(2) Dose-response tests confirm the direction, not just the subspace, is
+causal. (3) MLP neurons whose fc1 weights detect the same features the
+method reads gate selectively on the contrast (GELU pre-activation +1.50 vs
+−0.01); across 18 contrasts spanning lexical, semantic, syntactic, and
+cross-lingual phenomena, every case produces strictly gated neurons, with
+zero neuron reuse between contrasts (67 unique neurons out of 10,240 per
+layer).
 
-**Lexical disambiguation.** "The hot dog was" vs "The cold dog was" — the
-contrastive projection traces compound-noun recognition to a specific position
-and layer. Activation patching confirms the traced circuit.
+When a single contrastive pair produces uninterpretable tokens, the signal
+is still present but superposed with pair-specific noise. Multi-contrast
+triangulation — averaging across multiple baselines — recovers token-shaped
+causal content: for "caught a cold," single-pair recovery is 1%, five-baseline
+triangulation recovers 77% (reading "doctor, doctors, rest"). Entity-identity
+contrasts (names, cities) desuperpose from a single pair; compositional
+contrasts (food compounds, moral judgment, quantifier pragmatics) require
+multiple baselines.
 
-**Replication of landmark findings.** The method recovers the key observations
-from IOI circuit analysis (IO name crystallizes at L24; per-head decomposition
-identifies name-mover heads), factual recall tracing, and successor head
-identification. It locates the same phenomena that previously required
-circuit-level reverse engineering, serving as a rapid scout for where to
-apply heavier mechanistic tools.
-
-The projection reads the prediction-shaped component of the representation —
-content aligned with W_U's token rows. We bypass the final LayerNorm; token
-rankings are empirically invariant to this choice. Content validation comes
-from causal injection (z = 223–4249 across four cases) and logit-lens
-invisibility (contrastive top-5 absent from both constituents' top-20 at
-mid-layers). The method is silent on non-prediction-shaped computation. We
-release code and data.
+We apply the method to Phi-2 (2.7B), tracing compound-noun recognition to
+a two-hop MLP→attention circuit confirmed by activation patching, replicating
+IOI name-mover heads and factual recall concentration, distinguishing real
+factual recall from hallucinated name fragments, identifying a weekend
+discontinuity in successor heads, and mapping 15 semantic axes across four
+models. We release code and data.
 
 ---
 
 ## 1. Introduction
 
-A transformer processing "The hot dog was" predicts continuations about food —
-"too hot," "cooked," "served." The same model processing "The cold dog was"
-predicts continuations about an animal — "shivering," "panting," "given a
-blanket." The word "hot" changes the meaning of "dog" from animal to food item.
-We ask: where in the network does this disambiguation happen, and which
-component does it?
+A transformer processing "The hot dog was" predicts continuations about food.
+The same model processing "The cold dog was" predicts continuations about an
+animal. The logit lens (nostalgebraist 2020) projects each hidden state through
+W_U and at intermediate layers reads the same function words for both —
+"not, no, made, a, more." The food distinction is invisible: it is present in
+the residual stream but superposed with other signals that dominate the
+projection.
 
-The logit lens (nostalgebraist 2020) and tuned lens (Belrose et al. 2023)
-project individual hidden states through W_U. At intermediate layers they decode
-to shared function words — the same for both "hot dog" and "cold dog." The
-contrastive projection subtracts one state from the other before projecting,
-revealing content that separates the two inputs. We verify this directly: at
-layers 8–24 for the hot dog case, the logit lens on both constituents reads
-"not, no, made, a, more" (shared function words), while the contrastive
-projection reads "fried, crispy, delicious, flavor" — food vocabulary that
-appears in neither constituent's top-20 (0–1/5 overlap through L24). Across
-five cases, contrastive top-5 tokens overlap with the constituent's logit-lens
-top-20 at 0–1/5 for mid-layers, rising to 1–3/5 only at L28+ where the
-prediction has crystallized.
+Subtracting one hidden state from the other before projecting through W_U
+cancels the shared signals and reads what differs. At layers 8–24 for the
+hot-dog case, this contrastive projection reads "fried, crispy, delicious,
+flavor" — food vocabulary absent from either constituent's logit-lens top-20
+(0–1/5 overlap through L24). The subtraction performs desuperposition: it
+isolates one axis of variation from the residual stream's superposed content.
 
-The probe is mechanical: given two inputs, subtract their hidden states at each
-layer and project the difference through W_U. The most positive tokens
-identify content associated with input *c*; the most negative identify content
-associated with input *k*. Together, the two poles at each layer form the
-trajectory. The arithmetic is identical to taking a RepE/ActAdd steering vector
-(Zou et al. 2023; Turner et al. 2023) and reading it through a logit lens
-(nostalgebraist 2020). The novelty is not the math but the systematization:
-per-position tracing, per-head decomposition, and the use of this operation as
-a diagnostic trajectory across all layers rather than a one-shot steering
-direction. We make two claims:
+The arithmetic is identical to computing a RepE/ActAdd steering vector (Zou
+et al. 2023; Turner et al. 2023) and reading it through a logit lens
+(nostalgebraist 2020). The novelty is not the subtraction but three things
+built on it:
 
-1. **Descriptive.** The difference between two matched inputs, projected through
-   W_U at each layer and position, reads coherent token-space content that
-   changes across layers. The content is set by the chosen pair; the
-   model-relevant observations are the layer-wise dynamics and the per-position
-   information flow.
-2. **Exploratory.** By reading the contrast at every position, we can locate
-   which position first computes a meaning distinction, which component
-   (attention or MLP) contributes it, and how information flows between
-   positions. This provides the "where and when" — pinpointing exactly where
-   to apply heavier tools like activation patching or circuit analysis to
-   establish the "how."
+1. **Systematic trajectory reading.** Per-position tracing locates where a
+   distinction first appears and how it flows between positions. Per-head
+   decomposition identifies which attention heads carry it. Layer-by-layer
+   readout tracks how the content changes from early detection to final
+   prediction.
 
-Primary results use Phi-2 (Microsoft, 2.7B parameters, 32 layers).
-Cross-model replication uses Pythia-410M, Pythia-1.4B, and Phi-4 (14B).
+2. **Multi-contrast triangulation.** A single contrastive pair may produce
+   uninterpretable tokens when the target signal is superposed with
+   pair-specific noise. Contrasting the same target against multiple baselines
+   and averaging isolates the shared causal direction. This recovers
+   token-shaped causal content from cases where single-pair readout fails:
+   "caught a cold" recovers 1% from a single pair, 77% from five-baseline
+   triangulation (reading "doctor, doctors, rest").
+
+3. **MLP neuron correspondence.** The features the method reads externally
+   correspond to features the model detects internally. MLP neurons whose fc1
+   weights align with the contrastive input direction gate selectively via
+   GELU, and their fc2 columns write the same tokens the contrastive method
+   reads. Across 18 contrasts, every case produces strictly gated neurons with
+   zero neuron reuse between contrasts.
+
+We apply the method to Phi-2 (2.7B), with cross-model replication on
+Pythia-410M, Pythia-1.4B, and Phi-4 (14B).
 
 ---
 
@@ -153,11 +155,47 @@ establish causality.
 
 ### 2.4 What the projection reads
 
-The contrastive projection reads the prediction-shaped component of the
-representation difference — the part aligned with W_U's token rows. What W_U
-reports as token labels at intermediate layers are not predictions but
-continuation preparations: tokens the model might produce at the current or
-future positions, modulated by context.
+The contrastive projection performs external desuperposition of the residual
+stream. At any given layer, the hidden state carries multiple token-shaped
+signals in superposition. A raw logit-lens readout sees their incoherent
+sum — often dominated by function words or producing uninterpretable token
+rankings. The contrastive subtraction cancels signals shared between the two
+inputs and isolates the axis of variation, making the readout coherent.
+
+What W_U reports as token labels at intermediate layers are not predictions
+but continuation preparations: tokens the model might produce at the current
+or future positions, modulated by context.
+
+**Single-pair vs. multi-contrast readout.** A single contrastive pair
+isolates one axis of variation but the readout may still contain pair-specific
+noise superposed with the shared signal. When the target concept is a single
+entity (a name, a city), this noise is small and the readout is clean. When
+the target is compositional (a food compound, a moral judgment, a quantifier's
+pragmatic force), pair-specific noise can dominate, producing uninterpretable
+tokens. Multi-contrast triangulation — contrasting the same target against
+several baselines and averaging — cancels pair-specific noise and recovers
+the shared causal direction.
+
+We verify this empirically. For "She caught a cold" vs "She caught a fish,"
+the top-20 W_U directions of the single-pair Δh recover 1% of the prediction
+gap when injected. The same case triangulated against five contrasts (fish,
+ball, bus, thief, glimpse) yields a shared direction reading "doctor, doctors,
+rest, see" that recovers 77%. The causal content was token-shaped but buried
+under pair-specific superposition (Table 1).
+
+| Case | Single-pair recovery | Multi-contrast recovery | Shared direction reads |
+|------|---------------------|------------------------|----------------------|
+| IOI (Mary/John) | 84% | — (not needed) | Mary, mary |
+| Capital (Paris/Berlin) | 97% | — (not needed) | Paris, French |
+| Caught a cold | 1% | 77% | doctor, doctors, rest |
+| Theft/moral | 4% | 75% | evade, hoped, evasion |
+| Hot dog food | 11% | 49% | crispy, charred, cooked |
+| Some/all (partitive) | -40% | 101% | some, Some, SOME |
+
+*Table 1. Single-pair W_U projection vs. multi-contrast triangulation.
+Entity-identity contrasts (top rows) desuperpose trivially. Compositional
+contrasts (bottom rows) require multiple baselines to isolate the
+token-shaped causal signal from pair-specific noise.*
 
 W_U contributes the interpretable token labels. Trajectory smoothness
 (consecutive-layer cosine ~0.9) is a general property of the residual stream,
@@ -166,9 +204,6 @@ not specific to meaningful contrasts: unrelated pairs ("The hot dog was" vs
 pairs (0.88 ± 0.03, N=6), because any two residual streams diverge gradually.
 Random directions give cosine ≈ 0.00 (z = 64–93), confirming Δh is structured
 rather than noise, but smoothness alone does not validate content.
-
-The method is silent on non-prediction-shaped computation — structure in the
-residual stream that is not aligned with W_U's token rows.
 
 ---
 
@@ -258,6 +293,65 @@ eatability direction (0.72–0.84), reflecting the fact that "what makes Paris-i
 the-capital true" and "what makes dogs-are-mammals true" share less structure
 than different food-compound contrasts. Despite this, the direction is
 bidirectionally causal for the strongest pairs.
+
+### 3.3 Contrastive features correspond to MLP internal structure
+
+The previous sections establish that the contrastive direction is causal
+(§3.1) and specific (§3.2). A separate question is whether the features the
+method reads — the token-space content of Δh — correspond to structure the
+model itself uses, or are artifacts of projecting through W_U.
+
+We test this by decomposing MLP neurons into read→gate→write components.
+Each neuron in the MLP has three parts: its fc1 row (a detector that reads
+from the residual stream), the GELU activation (a gate that fires or stays
+silent), and its fc2 column (a direction written into the residual stream
+when the gate opens). If the features read by the contrastive method are
+real model representations, then neurons whose fc1 detectors align with the
+contrastive input direction should gate selectively — firing for one input
+and not the other — and their fc2 write vectors should project to
+interpretable tokens through W_U.
+
+We test this across 18 contrastive cases spanning lexical disambiguation,
+emotion, morality, metaphor, factual recall, quantifier semantics, tense,
+language identity, register, code modality, disaster type, and entity size.
+For each case, we identify "strictly gated" neurons: those with pre-GELU
+activation above 0.3 for one input and below 0.05 for the other.
+
+**Every case produces strictly gated neurons.** The count ranges from 1
+(capital France/Germany, formal/informal, agent swap) to 11 (literal vs
+metaphorical cold), with a mean of 3.7 per contrast.
+
+**Example.** At L20, neuron 7828's fc1 row projected through W_U reads
+"food, edible, delicious, flavorful, Foods." Its pre-GELU activation is
++1.50 for "The hot dog was" and −0.01 for "The hot cat was." When the gate
+opens, its fc2 column writes "flavors, tasting, flavor, flavorful, edible"
+into the residual stream. The contrastive method at L20 reads food tokens
+from Δh; neuron 7828 internally detects and gates on the same feature.
+
+| Neuron | Layer | Contrast | fc1 reads | Pre-GELU (A/B) | fc2 writes |
+|--------|-------|----------|-----------|----------------|------------|
+| 7828 | L20 | food compound | food, edible, delicious | +1.50 / −0.01 | flavors, tasting, edible |
+| 2133 | L20 | animal size | bulky, larger, cumbersome | +1.07 / −0.04 | larger, bigger, bulky |
+| 841 | L28 | IOI gender | himself, his, His | −0.00 / +0.35 | his, himself, His |
+| 2226 | L20 | English/French | [French tokens] | −0.04 / +3.40 | ét, dé, ère |
+| 5082 | L24 | literal/metaphor | dwindle, skyrocket, grows | +3.01 / −0.05 | rising, rose, increased |
+| 925 | L20 | food compound | food, food, foods | +1.00 / −2.31 | [food-associated] |
+
+*Table 2. MLP neurons whose fc1 read direction aligns with the contrastive
+input and whose GELU gates selectively. Each neuron detects the same feature
+the contrastive method reads from Δh.*
+
+**Zero neuron reuse across contrasts.** Across 49 same-layer pairwise
+comparisons between the 18 cases, no strictly gated neuron appears in more
+than one contrast. The 18 contrasts activate 67 unique strict neurons out of
+10,240 per layer (0.65%). Each contrast activates its own private set of
+detectors.
+
+This provides a third form of validation: the contrastive method reads
+features that the model's own MLP neurons detect and gate on. The causal
+injection tests (§3.1) show the subspace matters; the dose-response tests
+(§3.2) show the direction matters; the neuron correspondence shows the
+features themselves match the model's internal detector structure.
 
 ---
 
@@ -650,83 +744,92 @@ projection (only name/position bias). The mechanism emerges between 1.4B and
 
 ## 8. Discussion
 
-### What the method is
+### What the method does
 
-A training-free exploratory tool for reading how two inputs differ in the
-residual stream, at each layer and position, in token space. One matrix
-multiply per layer-position pair on a difference vector. The method locates
+Contrastive projection desuperposes the residual stream along a chosen axis
+of variation. The subtraction cancels signals shared between two inputs;
+the W_U projection reads the remainder in token space. The method locates
 where a distinction first appears (per-position reading), which component
 writes it (attention vs MLP decomposition), and which head carries it
-(per-head decomposition). It provides the "where and when" of a computation,
-identifying targets for causal verification.
+(per-head decomposition).
 
-### What the method reads
+### What the readout means
 
-The prediction-shaped component of the representation — content aligned with
-W_U's token rows. This is continuation preparation: tokens the model has
-prepared for possible use at current or future positions, modulated by context.
+The contrastive projection reads continuation preparations: token-shaped
+content the model has written into the residual stream for use at current
+or future positions. This content is aligned with W_U's token rows. The
+token labels are W_U's nearest-neighbour assignments to directions in the
+residual stream — names for what the model is computing, verified by three
+independent tests: causal injection (§3.1), dose-response (§3.2), and MLP
+neuron correspondence (§3.3).
 
-### What the method does not read
+When the readout produces uninterpretable tokens, the target signal is
+typically still present but superposed with other signals. Multi-contrast
+triangulation (§2.4) recovers the causal content in every case we tested.
+This does not guarantee that all model computation is token-readable — it
+establishes that for the 18 contrasts tested, the causal content is
+token-shaped once properly desuperposed.
 
-Non-prediction-shaped computation. Structure in the residual stream that is not
-aligned with W_U is invisible to the projection. The method's silence on a
-direction does not imply the direction is absent — only that W_U cannot decode
-it.
+### Superposition and contrast design
+
+The quality of the readout depends on the contrast. A well-chosen pair
+that varies one axis produces a clean readout. A poorly chosen pair — or
+one where the target concept is compositional and superposed with
+pair-specific content — produces tokens that reflect the superposition,
+not the target. Multi-contrast averaging addresses this for cases we tested,
+but we have not established how many baselines are sufficient in general,
+nor whether all model computations can be desuperposed by this technique.
 
 ### Token readability and causal relevance
 
-Across 16 contrastive pairs, 4 layers, and 32 attention heads (1774 head-level
-measurements), we measured both the W_U readability of each head's contrastive
-output (fraction of top-5 tokens that are real English words) and its causal
-alignment (|cos| with the full prediction-site contrastive). Heads whose
-contrastive output reads as real words have higher causal alignment on average
-(mean |cos| 0.044 for 5/5-readable vs 0.025 for 0/5-readable; Pearson
-r = +0.15). In our sample, the most causally aligned individual head
-contributions are token-readable, and no unreadable head exceeds |cos| = 0.16.
-This correlation is consistent with the expectation that causally relevant
-directions must eventually be readable by W_U to affect output logits, but we
-note the sample is limited and the correlation is modest.
+Across 16 contrastive pairs, 4 layers, and 32 attention heads (1774
+head-level measurements), heads whose contrastive output reads as real
+words have higher causal alignment on average (mean |cos| 0.044 for
+5/5-readable vs 0.025 for 0/5-readable; Pearson r = +0.15). The most
+causally aligned individual head contributions in our sample are
+token-readable, and no unreadable head exceeds |cos| = 0.16. The sample
+is limited and the correlation is modest.
 
 ### Relationship to circuit analysis
 
-The contrastive projection locates phenomena; circuit analysis explains them.
-Wang et al. (2023) mapped the full IOI computational subgraph in GPT-2,
-identifying specific heads (e.g., S-inhibition heads, name-mover heads) and
-their causal roles. Our method identifies heads with the same functional
-signature in Phi-2 (H14, H1, H16 at L24) by contrastive norm, but does not
-establish their causal roles — that requires
-activation patching or path patching. The method is closest to causal tracing
-(Meng et al. 2022): it identifies where information concentrates, then hands
-off to heavier tools for causal verification.
+The contrastive projection locates phenomena; circuit analysis explains
+them. Wang et al. (2023) mapped the IOI circuit in GPT-2 via path
+patching. Our method identifies heads with the same functional signature
+in Phi-2 (H14, H1, H16 at L24) by contrastive norm, but does not
+establish their causal roles. The method is closest to causal tracing
+(Meng et al. 2022): it identifies where information concentrates, then
+hands off to heavier tools for causal verification.
 
 ### Limitations
 
 - **Curated pairs, not sampled.** All demonstrations use hand-constructed
-  minimal pairs.
+  minimal pairs. The multi-contrast triangulation uses hand-selected
+  baselines.
 - **LayerNorm bypassed.** We skip the final LayerNorm, so W_U receives
-  vectors at the wrong scale. Token rankings are empirically invariant to this
-  choice, but raw contrastive norms are not comparable across layers due to
-  residual-stream norm growth.
-- **W_U readability not guaranteed.** The difference of two states was never
-  trained for W_U projection. Token labels at intermediate layers are W_U's
-  nearest-neighbour assignments, not verified names for model computations.
-- **Smoothness is not W_U-specific.** Trajectory coherence (consecutive-layer
-  cosine) is a property of Δh, not of W_U. This metric does not validate that
-  W_U reads anything meaningful.
-- **Exploratory, not causal.** The per-position trace suggests information
-  flow paths; the per-head decomposition identifies large contributors. Neither
-  establishes causality. Activation patching is required to confirm that a
-  component is necessary, not merely correlated. We verify causality via
-  activation patching for the hot dog case (§4.1) and via injection recovery
-  for four cases (§3.1), but the per-head decomposition (§5) is observational.
-- **Tokenization for per-position reading.** The per-position trace (§2.2) requires that the read position corresponds to the
-  same structural role in both inputs — e.g., "dog" must be at the same
-  position in both prompts. This is naturally satisfied by minimal pairs that
-  differ in one token.
-- **Model coverage.** Primary mechanistic results (§4) on Phi-2 only. IOI
-  replicates on Pythia models. The axis taxonomy (§6) covers four models
-  (Pythia-410M, Pythia-1.4B, Phi-2, Phi-4) and shows both similar and
-  model-family-dependent patterns.
+  vectors at the wrong scale. Token rankings are empirically invariant to
+  this choice, but raw contrastive norms are not comparable across layers
+  due to residual-stream norm growth.
+- **W_U readability not guaranteed.** The difference of two states was
+  never trained for W_U projection. Token labels at intermediate layers
+  are W_U's nearest-neighbour assignments. The MLP neuron correspondence
+  (§3.3) provides independent evidence that these labels match internal
+  model structure for the cases tested.
+- **Smoothness is not W_U-specific.** Trajectory coherence
+  (consecutive-layer cosine) is a property of Δh, not of W_U.
+- **Exploratory, not causal.** The per-position trace and per-head
+  decomposition identify large contributors, not causes. We verify
+  causality via activation patching for the hot dog case (§4.1) and via
+  injection recovery for four cases (§3.1), but the per-head
+  decomposition (§5) is observational.
+- **Desuperposition coverage.** We tested multi-contrast triangulation on
+  6 cases and MLP neuron correspondence on 18 cases. We do not know
+  whether all model computations can be desuperposed by contrastive
+  subtraction, nor how many baselines are sufficient in general.
+- **Per-position reading requires tokenization alignment.** The read
+  position must correspond to the same structural role in both inputs.
+- **Model coverage.** Primary mechanistic results (§4) on Phi-2 only.
+  IOI replicates on Pythia models. The axis taxonomy (§6) covers four
+  models and shows both consistent and model-dependent patterns.
 
 ---
 
@@ -742,6 +845,15 @@ decomposition.
 individual states through W_U. The contrastive projection reads the content
 that differs between two inputs — a different subspace from what the logit lens
 shows for either input individually.
+
+**Superposition and sparse autoencoders.** Elhage et al. (2022) characterized
+superposition in toy models. Bricken et al. (2023) and Templeton et al. (2024)
+use sparse autoencoders to decompose superposed representations into
+monosemantic features. Our multi-contrast triangulation achieves a related
+decomposition — isolating one signal from superposition — using paired inputs
+rather than learned dictionaries. The MLP neuron correspondence (§3.3) connects
+to the neuron-level analysis in this literature but uses contrastive gating
+rather than unsupervised feature discovery.
 
 **Circuit analysis and causal tracing.** Wang et al. (2023) reverse-engineered
 the IOI circuit in GPT-2 via path patching. Meng et al. (2022) used causal
