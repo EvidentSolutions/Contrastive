@@ -208,6 +208,57 @@ contrastive projection at the prediction position. IOI recovers from L24
 first appears). The causal onset tracks the layer at which the contrastive
 projection first reads target-relevant content at the prediction position.
 
+### 3.2 Dose-response and bidirectional causality
+
+The layer-sweep above injects the full Δh at one layer. We can also extract a
+specific contrastive *direction* from multiple pairs and test its causal effect
+with controlled magnitude.
+
+**Eatability direction.** We extract a food-compound direction by averaging the
+contrastive (hot dog minus X dog) for X ∈ {cold, angry, old, pet, stray} at
+the dog position, L4 post. These five directions are mutually consistent
+(pairwise cos 0.72–0.84). We inject the mean direction into non-food prompts
+at the dog position at varying fractions of its natural magnitude:
+
+| Target prompt | Baseline top-1 | +0.25× | +0.50× | +1.0× |
+|---------------|---------------|--------|--------|-------|
+| The cold dog was | sh (0.45) | sh (0.10) | tasty (0.06) | tasty (0.06), served (0.05) |
+| The angry dog was | barking (0.31) | barking (0.34) | barking (0.35) | cooked (0.05) |
+
+Subtracting the direction from "The hot dog was" reverses the effect:
+
+| Fraction | Top-1 | P(top-1) | Interpretation |
+|----------|-------|----------|----------------|
+| baseline | too | 0.088 | food item |
+| −0.50× | more | 0.122 | weakening |
+| −1.00× | pant[ing] | 0.234 | animal |
+| −1.50× | pant[ing] | 0.297 | animal (stronger) |
+
+The minimum dose that flips top-1 prediction is 0.30× for cold dog (where
+"cold" partially aligns with food) and 0.65× for angry dog (where "angry"
+strongly primes the animal reading).
+
+**Truth direction.** We extract a truth/falsity direction by averaging the
+contrastive (true statement minus false statement) for five fact pairs (Paris/
+France, water/0°, Sun/star, dogs/mammals, Tokyo/Japan) at the prediction
+position. Injecting into false statements:
+
+| Target prompt | Baseline | +0.50× truth | +1.0× truth |
+|---------------|---------|-------------|-------------|
+| Paris is not the capital of France. This statement is | false (0.31) | true (0.29) | true (0.42) |
+
+Subtracting from true statements:
+
+| Target prompt | Baseline | −1.0× truth | −1.5× truth |
+|---------------|---------|-------------|-------------|
+| Paris is the capital of France. This statement is | true (0.37) | false (0.25) | false (0.32), incorrect (0.13) |
+
+The truth direction has lower cross-pair consistency (mean cos ~0.35) than the
+eatability direction (0.72–0.84), reflecting the fact that "what makes Paris-is-
+the-capital true" and "what makes dogs-are-mammals true" share less structure
+than different food-compound contrasts. Despite this, the direction is
+bidirectionally causal for the strongest pairs.
+
 ---
 
 ## 4. Lexical disambiguation
@@ -225,18 +276,32 @@ cold dog → "sh[ivering]" (0.447), "shaking" (0.036).
 
 At position 2 ("dog") — same token in both prompts, L0 contrast is zero:
 - L1: "hot, molten, fiery" — "dog" receives temperature info from "hot"
-- L5: "fried" first appears — compound meaning recognized
+- L4 (post-MLP): "fried" first appears — compound meaning recognized by MLP
+- L5 (post-attention): "fried" persists — L5 attention adds little locally
 - L24: "fried, seasoning, Flav, Serv, vendor" — full food vocabulary
 - L32: "vendor, vendors, stand, topping" — hot dog stand
 
+Sub-layer decomposition at L4–L5 confirms the compound is recognized by the
+MLP at L4, not by attention. The MLP contrastive norm at L4 (20.0) dominates
+the attention norm (3.8); "fried" appears in the MLP output but not the
+attention output. L5 attention writes orthogonally to the food direction
+(cos(Δpre, Δattn) < 0.08 across all contrasts tested).
+
 At position 3 ("was") — reads from "dog":
-- L6: "fried, delicious, tasty, breakfast" — one layer after "dog" recognizes the compound
+- L5 (attention): "delicious, substitutes, cooked" — food signal arrives via
+  attention from "dog" (one layer after MLP recognizes the compound at "dog")
+- L6: "fried, delicious, tasty, breakfast"
 - L28: "tasty, charred, crispy, delicious, spicy" (hot) vs "grooming, shudder, shaking" (cold)
 
-**Attention weights at L5, position "was":**
+**Attention routing at L5, position "was":**
 Head 19 attends to "dog" position with weight 0.911 in the hot-dog context vs
 0.735 in cold-dog. Head 29 attends 0.345 vs 0.138. These heads read the
-compound-noun information from "dog."
+compound-noun information from "dog" and write it to "was."
+
+**Multi-contrast convergence:** The food-compound direction is stable across
+reference points. Five different contrasts (hot dog minus cold/angry/old/pet/
+stray dog) produce pairwise cosine 0.72–0.84 at the dog position, confirming
+the signal is about food-compound identity, not temperature or emotion.
 
 **Activation patching at multiple layers and positions:**
 
@@ -261,11 +326,11 @@ attention. (3) Patching "was" has no effect at L0–L5 (the food information
 hasn't arrived yet) but eliminates food from L12 onward — confirming that
 attention at L6+ copies the compound meaning from "dog" to "was."
 
-**Mechanism:** Attention at L0 copies "hot" to the "dog" position. The compound
-is recognized at the "dog" position at L5 ("fried" first appears). Attention at
-L6+ reads this from "dog" to "was." The contrastive projection identified each
-stage; activation patching at three positions and multiple layers confirms the
-information flow.
+**Mechanism:** Attention at L0 copies "hot" to the "dog" position. The MLP at
+L4 recognizes the compound at the "dog" position ("fried" first appears in the
+MLP output). Attention at L5 broadcasts this from "dog" to "was" (H19,
+attn=0.91). The contrastive projection identified each stage; activation
+patching at three positions and multiple layers confirms the information flow.
 
 ### 4.2 Other disambiguation cases
 
@@ -508,9 +573,37 @@ its target domain:
 
 The contrastive projection shows that the model processes metaphor by
 activating domain-specific tokens at mid-layers (L16–24), not by toggling a
-figurativity feature. This explains why metaphor does not form a linear axis
+figurativity feature. This explains why metaphor does not form a linear axis.
 This suggests (but does not test) that probing classifiers trained on one
 metaphor domain would not transfer to another.
+
+### 6.4 Axis consistency predicts causal potency
+
+The tier classification connects to the causal tests in §3.2. The
+positive/negated axis (Tier 1, cos 0.84–0.90) produces a direction that
+bidirectionally flips true/false predictions when injected. The eatability
+direction — extracted by the same multi-contrast averaging used for axes —
+flips food/animal predictions at 30% of natural magnitude.
+
+We tested whether axis consistency predicts whether the W_U readout of an
+axis functions as a frame-forcing token. For six contrastive scenarios, we
+extracted the axis direction, read its top tokens through W_U, and tested
+those tokens as adjective modifiers on 15 nouns:
+
+| Scenario | Axis consistency | W_U top token | Override rate |
+|----------|-----------------|---------------|---------------|
+| flying (vs parked) | 0.74 | "future", "enabled" | 87–93% |
+| stolen (vs displayed) | 0.67 | "rightfully" | 93% |
+| deadly (vs harmless) | 0.57 | "deadly" | 100% |
+| burning (vs standing) | 0.59 | "got", "lis" | 0–7% |
+| frozen (vs fresh) | 0.44 | "oop", "paradox" | 7% |
+
+When axis consistency exceeds ~0.6, the W_U readout surfaces tokens that
+function as frame-forcers when used as modifiers. Below ~0.5, the direction is
+still causal when injected (the burning direction shifts predictions from
+"built" to "evacuated") but its W_U readout does not produce usable tokens.
+The contrastive direction is causally relevant in both cases; only its
+token-readability depends on consistency.
 
 ---
 
@@ -579,6 +672,20 @@ Non-prediction-shaped computation. Structure in the residual stream that is not
 aligned with W_U is invisible to the projection. The method's silence on a
 direction does not imply the direction is absent — only that W_U cannot decode
 it.
+
+### Token readability and causal relevance
+
+Across 16 contrastive pairs, 4 layers, and 32 attention heads (1774 head-level
+measurements), we measured both the W_U readability of each head's contrastive
+output (fraction of top-5 tokens that are real English words) and its causal
+alignment (|cos| with the full prediction-site contrastive). Heads whose
+contrastive output reads as real words have higher causal alignment on average
+(mean |cos| 0.044 for 5/5-readable vs 0.025 for 0/5-readable; Pearson
+r = +0.15). In our sample, the most causally aligned individual head
+contributions are token-readable, and no unreadable head exceeds |cos| = 0.16.
+This correlation is consistent with the expectation that causally relevant
+directions must eventually be readable by W_U to affect output logits, but we
+note the sample is limited and the correlation is modest.
 
 ### Relationship to circuit analysis
 
