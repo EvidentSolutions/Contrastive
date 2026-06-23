@@ -154,14 +154,9 @@ representations progressively align with output space, not input space.
 
 ### 2.2 Per-position reading
 
-Under causal attention, the hidden state at position *p* depends only on tokens
-at positions ≤ p. For two inputs that share a prefix and differ at position *d*,
-the hidden states are identical at all positions < d. At position d and beyond,
-the contrast is nonzero and carries information about the differing content.
-
-By reading the contrast at every position, we trace information flow: at which
-position does a meaning distinction first appear? Does it appear at the
-differing token itself, or at a later position that attends to it?
+By reading the contrast at every position, we trace information flow: at
+which position does a meaning distinction first appear? Does it appear at
+the differing token itself, or at a later position that attends to it?
 
 ### 2.3 Attention and MLP decomposition
 
