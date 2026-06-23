@@ -82,9 +82,10 @@ the residual stream. Pre-GELU: +1.50 for "hot dog" vs −0.01 for "hot cat"
 
 Sweep across 18 contrasts (food, emotion, morality, metaphor, factual,
 quantifier, tense, language, register, code, disaster, size): every case
-produces 1–11 strictly gated neurons (mean 3.7). Zero strict neurons are
-shared between any two contrasts across 49 same-layer comparisons. 18
-contrasts activate 67 strict neurons out of 10,240 per layer (0.65%).
+produces 1–11 strictly gated neurons (mean 3.7, 67 total across 18
+contrasts out of 10,240 per layer). Ablating strict neurons produces
+10–650× larger KL divergence than ablating the same number of random
+neurons.
 
 Additional examples:
 - N2133 (L20): reads "bulky, larger, cumbersome" → writes "larger, bigger, bulky"

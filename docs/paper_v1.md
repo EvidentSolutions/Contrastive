@@ -29,9 +29,9 @@ opposing input recovers the prediction gap (z = 223–4249 across four cases).
 (2) Dose-response tests confirm the direction, not just the subspace, is
 causal. (3) MLP neurons whose fc1 weights detect the same features the
 method reads gate selectively on the contrast; across 18 contrasts, every
-case produces strictly gated neurons, with zero neuron reuse between
-contrasts (67 unique neurons out of 10,240 per layer). The features the
-method reads externally correspond to features the model detects internally.
+case produces strictly gated neurons (67 total across 18 contrasts, out of
+10,240 per layer). The features the method reads externally correspond to
+features the model detects internally.
 
 For compositional contrasts where a single pair produces noisy readouts,
 multi-contrast triangulation — averaging across multiple baselines —
@@ -90,7 +90,7 @@ built on it:
    weights align with the contrastive input direction gate selectively via
    GELU, and their fc2 columns write the same tokens the contrastive method
    reads. Across 18 contrasts, every case produces strictly gated neurons with
-   zero neuron reuse between contrasts.
+   the features match the model's internal detector structure.
 
 We apply the method to Phi-2 (2.7B), with cross-model replication on
 Pythia-410M, Pythia-1.4B, and Phi-4 (14B).
@@ -405,12 +405,6 @@ from Δh; neuron 7828 internally detects and gates on the same feature.
 *Table 2. MLP neurons whose fc1 read direction aligns with the contrastive
 input and whose GELU gates selectively. Each neuron detects the same feature
 the contrastive method reads from Δh.*
-
-**Zero neuron reuse across contrasts.** Across 49 same-layer pairwise
-comparisons between the 18 cases, no strictly gated neuron appears in more
-than one contrast. The 18 contrasts activate 67 unique strict neurons out of
-10,240 per layer (0.65%). Each contrast activates its own private set of
-detectors.
 
 **Ablation.** Zeroing the strict neurons and measuring the change in output
 distribution (KL divergence from unablated baseline) produces 10–650× larger
