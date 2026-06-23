@@ -79,7 +79,7 @@ built on it:
 
 2. **Multi-contrast triangulation.** A single contrastive pair may produce
    uninterpretable tokens when the target signal is superposed with
-   pair-specific noise. Contrasting the same target against multiple baselines
+   pair-specific content. Contrasting the same target against multiple baselines
    and averaging isolates the shared causal component. This recovers
    token-shaped causal content from cases where single-pair readout fails:
    "caught a cold" recovers 1% from a single pair, 77% from five-baseline
@@ -189,13 +189,17 @@ of what the model will output; they are a readable surface of the model's
 internal state.
 
 **Single-pair vs. multi-contrast readout.** A single contrastive pair
-isolates one axis of variation but the readout may still contain pair-specific
-noise superposed with the shared signal. When the target concept is a single
-entity (a name, a city), this noise is small and the readout is clean. When
-the target is compositional (a food compound, a moral judgment, a quantifier's
-pragmatic force), pair-specific noise can dominate, producing uninterpretable
-tokens. Multi-contrast triangulation — contrasting the same target against
-several baselines and averaging — cancels pair-specific noise and recovers
+isolates one axis of variation but the readout contains the shared signal
+superposed with content specific to that baseline. When the target concept
+is a single entity (a name, a city), the pair-specific content is small
+and the readout is clean. When the target is compositional (a food compound,
+a moral judgment, a quantifier's
+pragmatic force), pair-specific content can dominate the readout, producing
+uninterpretable tokens. Each baseline contributes its own legitimate
+signals — "fish" adds fishing-related content, "bus" adds transportation
+content — superposed with the shared illness signal. Multi-contrast
+triangulation — contrasting the same target against several baselines and
+averaging — cancels the signals that vary across baselines and preserves
 the shared causal component.
 
 We verify this empirically. For "She caught a cold" vs "She caught a fish,"
@@ -249,7 +253,7 @@ granularity the contrast design provides.
 *Table 1. Single-pair W_U projection vs. multi-contrast triangulation.
 Entity-identity contrasts (top rows) desuperpose trivially. Compositional
 contrasts (bottom rows) require multiple baselines to isolate the
-token-shaped causal signal from pair-specific noise.*
+token-shaped causal signal from pair-specific content.*
 
 W_U contributes the interpretable token labels. Trajectory smoothness
 (consecutive-layer cosine ~0.9) is a general property of the residual stream,
