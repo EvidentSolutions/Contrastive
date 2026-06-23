@@ -6,38 +6,46 @@
 
 ## Abstract
 
-A transformer's residual stream carries multiple signals in superposition.
-The logit lens reads their incoherent sum; we subtract matched inputs before
-projecting, isolating the axis of variation. This contrastive projection —
-one matrix multiply per layer-position pair, no training — reads how two
-inputs differ in token space at every layer, producing a trajectory of
-the computation that separates them.
+We present a training-free method for reading a transformer's internal
+representations. Given two inputs that differ in a controlled way — e.g.,
+"The hot dog was" vs "The cold dog was" — we subtract their hidden states
+at each layer and project the difference through the unembedding matrix W_U.
+This produces a layer-by-layer readout in token space of what separates
+the two inputs. For the hot-dog case, at layers where the logit lens reads
+identical function words for both inputs, the contrastive projection reads
+"fried, crispy, delicious" — food vocabulary absent from either input's
+logit-lens top-20. The method requires one matrix multiply per layer-position
+pair, no probes to train, and no learned parameters.
 
-We validate in three ways. (1) Injecting the contrastive direction into the
+The subtraction performs desuperposition: the residual stream carries
+multiple signals in superposition, and subtracting matched inputs cancels
+shared content, isolating the axis of variation. Per-position reading traces
+where a distinction first appears; attention and MLP decomposition identifies
+which component writes it; per-head decomposition identifies which head
+carries it.
+
+We validate in three ways. (1) Injecting the contrastive component into the
 opposing input recovers the prediction gap (z = 223–4249 across four cases).
 (2) Dose-response tests confirm the direction, not just the subspace, is
 causal. (3) MLP neurons whose fc1 weights detect the same features the
-method reads gate selectively on the contrast (GELU pre-activation +1.50 vs
-−0.01); across 18 contrasts spanning lexical, semantic, syntactic, and
-cross-lingual phenomena, every case produces strictly gated neurons, with
-zero neuron reuse between contrasts (67 unique neurons out of 10,240 per
-layer).
+method reads gate selectively on the contrast; across 18 contrasts, every
+case produces strictly gated neurons, with zero neuron reuse between
+contrasts (67 unique neurons out of 10,240 per layer). The features the
+method reads externally correspond to features the model detects internally.
 
-When a single contrastive pair produces uninterpretable tokens, the signal
-is still present but superposed with pair-specific noise. Multi-contrast
-triangulation — averaging across multiple baselines — recovers token-shaped
-causal content: for "caught a cold," single-pair recovery is 1%, five-baseline
-triangulation recovers 77% (reading "doctor, doctors, rest"). Entity-identity
-contrasts (names, cities) desuperpose from a single pair; compositional
-contrasts (food compounds, moral judgment, quantifier pragmatics) require
-multiple baselines.
+For compositional contrasts where a single pair produces noisy readouts,
+multi-contrast triangulation — averaging across multiple baselines —
+recovers the shared causal component: for "caught a cold" contrasted against
+five baselines, recovery rises from 1% to 77% (reading "doctor, doctors,
+rest").
 
 We apply the method to Phi-2 (2.7B), tracing compound-noun recognition to
 a two-hop MLP→attention circuit confirmed by activation patching, replicating
 IOI name-mover heads and factual recall concentration, distinguishing real
 factual recall from hallucinated name fragments, identifying a weekend
 discontinuity in successor heads, and mapping 15 semantic axes across four
-models. We release code and data.
+models — including a causal demonstration that metaphor is processed by
+per-domain routing rather than a figurativity flag. We release code and data.
 
 ---
 
@@ -72,7 +80,7 @@ built on it:
 2. **Multi-contrast triangulation.** A single contrastive pair may produce
    uninterpretable tokens when the target signal is superposed with
    pair-specific noise. Contrasting the same target against multiple baselines
-   and averaging isolates the shared causal direction. This recovers
+   and averaging isolates the shared causal component. This recovers
    token-shaped causal content from cases where single-pair readout fails:
    "caught a cold" recovers 1% from a single pair, 77% from five-baseline
    triangulation (reading "doctor, doctors, rest").
@@ -130,6 +138,20 @@ layers (from 4 at L1 to 175 at L31), so raw Δlogits norms are not comparable
 across layers. Where we report norms across layers (e.g., §5.3), we use the
 relative norm ||Δh|| / ||h_c|| to remove this scale artifact.
 
+**Why W_U, not W_E.** The input embedding matrix W_E is an alternative
+projection target — fc1 reads from the residual stream, which originates as
+W_E embeddings. We test both. In Phi-2, W_E and W_U are orthogonal (mean
+cos 0.005 across the vocabulary). Projecting known clean MLP neurons' fc1
+rows through W_U produces interpretable labels (N925: "food, food, foods";
+N7828: "food, edible, delicious"; N841: "husband, husbands, boyfriend").
+The same rows through W_E produce noise ("union, replacement, abet";
+"required, when, executive"; "Representative, postal, learning").
+Contrastive Δh shows the same pattern: W_U reads "tast, charred, crispy,
+delicious" for hot dog at L28; W_E reads "is, ern, erton." The alignment
+gap widens with depth: fc1 rows' peak token-specificity via W_U exceeds
+W_E by 1.02× at L4, growing to 1.40× at L28. The model's internal
+representations progressively align with output space, not input space.
+
 ### 2.2 Per-position reading
 
 Under causal attention, the hidden state at position *p* depends only on tokens
@@ -162,9 +184,14 @@ sum — often dominated by function words or producing uninterpretable token
 rankings. The contrastive subtraction cancels signals shared between the two
 inputs and isolates the axis of variation, making the readout coherent.
 
-What W_U reports as token labels at intermediate layers are not predictions
-but continuation preparations: tokens the model might produce at the current
-or future positions, modulated by context.
+W_U projection assigns token labels to directions in the residual stream.
+At intermediate layers, these labels name the model's internal
+representations — the features it has detected and is operating on. The
+MLP neuron correspondence (§3.3) confirms this: when W_U reads "food,
+edible, delicious" from a contrastive direction, individual MLP neurons
+detect and gate on the same feature. The token labels are not predictions
+of what the model will output; they are a readable surface of the model's
+internal state.
 
 **Single-pair vs. multi-contrast readout.** A single contrastive pair
 isolates one axis of variation but the readout may still contain pair-specific
@@ -174,14 +201,35 @@ the target is compositional (a food compound, a moral judgment, a quantifier's
 pragmatic force), pair-specific noise can dominate, producing uninterpretable
 tokens. Multi-contrast triangulation — contrasting the same target against
 several baselines and averaging — cancels pair-specific noise and recovers
-the shared causal direction.
+the shared causal component.
 
 We verify this empirically. For "She caught a cold" vs "She caught a fish,"
-the top-20 W_U directions of the single-pair Δh recover 1% of the prediction
-gap when injected. The same case triangulated against five contrasts (fish,
-ball, bus, thief, glimpse) yields a shared direction reading "doctor, doctors,
-rest, see" that recovers 77%. The causal content was token-shaped but buried
-under pair-specific superposition (Table 1).
+we project the single-pair Δh onto the subspace spanned by the W_U rows of
+its top-20 and bottom-20 tokens (40 directions total, orthogonalized via QR
+decomposition) and inject only this token-subspace component. This recovers
+1% of the prediction gap — the token-readable part of the single-pair Δh is
+not where the causal content lives. (By contrast, injecting the full
+unrestricted Δh at the same layer recovers 69%, as in §3.1 — the causal
+content is present but not aligned with the loudest W_U directions.) The same
+case triangulated against five baselines (fish, ball, bus, thief, glimpse)
+yields a shared component reading "doctor, doctors, rest, see" that recovers
+77%. Multi-contrast averaging isolates the causal content that single-pair
+W_U projection misses (Table 1).
+
+**Granularity.** Multi-contrast averaging recovers what is shared across
+baselines, but cannot determine whether the result is a single feature or
+a stable bundle of co-occurring features. Entity-identity contrasts
+(Mary/John) recover a component that corresponds to one token.
+Compositional contrasts (illness, food-compound) may recover a bundle:
+"doctor, rest, see" could reflect co-activated medical, recovery, and
+action features rather than a single "illness" feature. MLP neuron
+correspondence (§3.3) shows that individual neurons detect specific
+sub-features within these components, but the model may compose multiple
+neuron-level features into higher-level representations that trigger
+downstream neurons — so neuron-level atomicity does not imply
+representation-level atomicity. We do not claim to recover atomic
+features. The method recovers the shared causal component at the
+granularity the contrast design provides.
 
 | Case | Single-pair recovery | Multi-contrast recovery | Shared direction reads |
 |------|---------------------|------------------------|----------------------|
@@ -253,7 +301,13 @@ with controlled magnitude.
 contrastive (hot dog minus X dog) for X ∈ {cold, angry, old, pet, stray} at
 the dog position, L4 post. These five directions are mutually consistent
 (pairwise cos 0.72–0.84). We inject the mean direction into non-food prompts
-at the dog position at varying fractions of its natural magnitude:
+at the dog position at varying fractions of its natural magnitude. Note that
+cold dog and angry dog are in the extraction set; the injection test measures
+whether the averaged direction produces graded, dose-dependent effects on
+model output, not whether it generalizes to held-out prompts. The multi-
+contrast triangulation experiments (§2.4, Table 1) provide the held-out
+generalization test, where the shared component is extracted from one set of
+baselines and recovery is measured on a different baseline.
 
 | Target prompt | Baseline top-1 | +0.25× | +0.50× | +1.0× |
 |---------------|---------------|--------|--------|-------|
@@ -347,11 +401,20 @@ than one contrast. The 18 contrasts activate 67 unique strict neurons out of
 10,240 per layer (0.65%). Each contrast activates its own private set of
 detectors.
 
-This provides a third form of validation: the contrastive method reads
-features that the model's own MLP neurons detect and gate on. The causal
-injection tests (§3.1) show the subspace matters; the dose-response tests
-(§3.2) show the direction matters; the neuron correspondence shows the
-features themselves match the model's internal detector structure.
+**Ablation.** Zeroing the strict neurons and measuring the change in output
+distribution (KL divergence from unablated baseline) produces 10–650× larger
+effects than zeroing the same number of random neurons, across 8 tested
+cases. These neurons are disproportionately relevant to the contrast. The
+absolute output change is small (KL 0.0001–0.005) — the strict neurons are
+part of a distributed computation, not solely responsible for it.
+
+**Scope of the claim.** The strict neurons account for 4–47% of the MLP's
+contrastive output norm (mean ~20%), with cosine alignment 0.03–0.30 to the
+full MLP contrastive output. The claim is correspondence, not completeness:
+the same feature that appears in the contrastive readout also appears in
+individual neuron detectors, these neurons are disproportionately impactful
+when ablated, and they are private to each contrast. This confirms that the
+W_U labels reflect internal model structure rather than projection artifacts.
 
 ---
 
@@ -395,7 +458,14 @@ compound-noun information from "dog" and write it to "was."
 **Multi-contrast convergence:** The food-compound direction is stable across
 reference points. Five different contrasts (hot dog minus cold/angry/old/pet/
 stray dog) produce pairwise cosine 0.72–0.84 at the dog position, confirming
-the signal is about food-compound identity, not temperature or emotion.
+the signal is about food-compound identity, not temperature or emotion. Note
+that high pairwise cosine between full Δh vectors does not imply high
+recovery from their top W_U token directions (Table 1 reports 11% for hot
+dog). The cosine measures alignment of the full d-model vectors; the 11%
+measures how much of each vector lives in the subspace of its loudest W_U
+tokens. A signal can be consistent in direction (high cosine) while being
+distributed across many W_U directions rather than concentrated in a few
+(low token-subspace recovery).
 
 **Activation patching at multiple layers and positions:**
 
@@ -446,6 +516,63 @@ adjective):
 **"He was fired up and" vs "He was fired and"** (particle changes meaning):
 - L28: "excited, ready, energetic" (fired up) vs "sued, blacklist, lawsuits"
   (fired)
+
+### 4.3 Scalar implicature: pragmatic inference in the residual stream
+
+Lexical disambiguation (§4.1–4.2) traces how the model resolves word meaning.
+A different kind of distinction is pragmatic: "Some of the students passed"
+implies "not all passed," though it does not literally say so. We test whether
+the model computes this scalar implicature in the residual stream.
+
+**Design:** Contrast "Some of the students passed the exam, so" against
+"All of the students passed the exam, so" and read the contrastive projection
+at the final token.
+
+**Trajectory (some pole +, all pole −):**
+
+| Layer | Some pole reads | All pole reads |
+|-------|----------------|---------------|
+| L8 | might, may | except, together |
+| L20 | Others, another | everyone, except, Everyone |
+| L28 | others, Others, another | everyone, Everyone, everybody, except |
+
+The model computes the pragmatic complement of "some" — the -side
+consistently reads "everyone, everybody, except" from L8 onward. The word
+"except" appears as early as L8 and persists through L28. The model
+represents "some" partly as "not everyone."
+
+**Cross-content consistency.** The same some/all contrast across 6 noun
+phrases (students, cookies, houses, employees, books, countries) produces
+pairwise cosine 0.12–0.45 (mean 0.30). The negative pole consistently reads
+totality words ("everyone, all, except, none") across all noun phrases,
+while the positive pole varies with content. Using multi-contrast
+triangulation across noun phrases, the shared component reads "Others,
+Other, another" vs "all, everyone, none, except, everybody" — both poles
+token-shaped.
+
+**Scalar gradient.** Projecting five quantifiers (None, Few, Some, Most,
+All) onto the some↔all axis at L28:
+
+| Quantifier | Projection |
+|------------|-----------|
+| None | +27 |
+| Few | +14 |
+| Some | +84 |
+| Most | +13 |
+| All | 0 (baseline) |
+
+The gradient is not monotonic: "Some" is the outlier, projecting far beyond
+any other quantifier. "Few" and "Most" project similarly despite being
+semantically opposite. This is consistent with "some" being the
+pragmatically marked quantifier — the one that generates scalar implicature
+— rather than the scale reflecting quantity.
+
+**Explicit vs bare.** Contrasting "Some of the students passed" against
+"Some but not all of the students passed" produces a non-trivial Δh (norm
+57–59 at L28). The -side reads "some, Some, not, neither, but, BUT" — the
+explicit restriction changes the representation. The bare "some" computes
+partial implicature (the "everyone/except" signal), but adding "but not all"
+adds further restriction beyond what the bare form computes.
 
 ---
 
@@ -546,8 +673,10 @@ no factual content beyond the name itself.
 
 **Contrastive norm.** The relative norm ||Δh||/||h|| at L28 is systematically
 larger for real-vs-fictional pairs (mean 0.98) than real-vs-real pairs (mean
-0.70). This is partly because fictional entities lack specific content to
-share with the real entity, and partly because the entities are less similar.
+0.70). Two real entities both occupy a shared subspace of factual-entity
+representations, constraining their difference; a fictional entity lacks
+factual content and drifts outside this subspace, producing a larger
+contrastive norm against any real entity.
 
 **Entropy.** Real entities predict with lower entropy (H = 1.5–2.5) than
 fictional ones (H = 3.4–6.3), consistent with the model having specific
@@ -600,6 +729,53 @@ Thu→Fri vs H11 norm=4).
 A separate PCA analysis of the raw hidden states (not using the contrastive
 projection) finds circular geometry for months and days; this is reported in
 the supplementary materials as it does not use the paper's method.
+
+### 5.5 Parametric knowledge vs in-context assertion
+
+When in-context information contradicts parametric knowledge, does the model
+override its stored facts? We test this by asserting a counterfactual capital
+and then querying: "The capital of France is Rome. The capital of France is."
+
+**The model does not override.** Across four country/capital pairs (France/Rome,
+Japan/London, Germany/Madrid, Italy/Vienna), the model predicts the correct
+parametric answer with high confidence despite the counterfactual assertion
+(P(Paris) = 0.77 vs 0.81 baseline; P(Tokyo) = 0.87 vs 0.30 baseline). Even
+with stronger framing ("It is well established that the capital of France is
+Rome"), the model predicts Paris at 0.46. Only fictional framing ("In the
+wizarding world") partially weakens parametric recall (Paris 0.31, Rome 0.18).
+
+**The contrastive trajectory reads correction, not acceptance.** Contrasting
+the counterfactual assertion against the veridical one:
+
+| Layer | Counterfactual pole reads | Parametric pole reads |
+|-------|--------------------------|---------------------|
+| L8 | similarly, similar | [subword fragments] |
+| L20 | Actually, actually, actual | [subword fragments] |
+| L24 | actually, Actually, correct | centrally, other |
+| L28 | Actually, Greece, Paris | [comparison tokens] |
+
+From L20 onward, the dominant signal is "Actually, actually, correct" — the
+model prepares a correction rather than accepting the override. At L28, the
+Paris token logit is *higher* on the counterfactual side (+9.6) than on the
+veridical side — the model strengthens its parametric recall when presented
+with a contradicting assertion. This pattern is consistent across all four
+country pairs.
+
+**Distance weakens correction.** Inserting distractor text between the
+assertion and query partially weakens the correction reflex: with a medium
+distractor (~20 words), P(Paris) drops to 0.38 and P(Rome) rises to 0.16.
+The contrastive trajectory at L28 shifts from reading "Actually" to reading
+the asserted city ("Rome, Italy, Madrid"), suggesting the correction signal
+decays with distance while the asserted content persists.
+
+**Connection to hallucination (§5.3).** The correction response — "Actually,
+it is Paris" — requires the model to have retrieved the parametric fact.
+The hallucination cases in §5.3 show that fictional entities produce no
+factual associations in the contrastive projection. The correction circuit
+and the factual-retrieval circuit may share structure: both require the
+model to have specific knowledge to draw on, and both are visible in the
+contrastive trajectory as the presence or absence of factual content at
+mid-to-late layers.
 
 ---
 
@@ -661,15 +837,49 @@ its target domain:
 
 | Contrast | Literal pole reads | Metaphor pole reads |
 |----------|-------------------|-------------------|
-| cold: ice vs reception | temperatures, 32°F | tense, gloomy, awkward |
-| sharp: knife vs criticism | blade, stainless | sarcastic, hostile |
-| bright: lamp vs student | blinding, illuminating | gifted, intellectual |
+| cold: ice vs reception | higher, Celsius, Fahrenheit | tense, atmosphere, tension, mood |
+| sharp: knife vs criticism | blade, blades, stainless | tone, sarcastic, condescending |
+| bright: lamp vs student | blinding, overpowering, intensity | proud, gifted, amazed, grades |
+| heavy: boulder vs news | exceed, load, exert | mood, tense, gloomy, somber |
 
-The contrastive projection shows that the model processes metaphor by
-activating domain-specific tokens at mid-layers (L16–24), not by toggling a
-figurativity feature. This explains why metaphor does not form a linear axis.
-This suggests (but does not test) that probing classifiers trained on one
-metaphor domain would not transfer to another.
+**Causal verification.** We extract routing directions from 4 literal-
+metaphorical pairs per word (pairwise cos 0.64–0.88) and inject them to
+flip the domain. Injecting the cold literal direction (+1.0×) into "The
+reception was extremely cold. The atmosphere was" shifts predictions from
+"chilly" (social) to "below, freezing" (temperature). Reverse injection
+(−1.0×) into "The ice was extremely cold. The temperature was" shifts from
+"below" to "tense" (social). The same pattern holds for sharp, bright,
+and heavy: each direction bidirectionally flips between the word's literal
+and metaphorical domain.
+
+**Dose-response.** The cold domain flip is graded: the metaphorical context
+shifts through chilly → freezing → below as injection magnitude increases
+from 0.25× to 2.0×. Top-1 prediction flips at 0.65× of natural magnitude.
+
+**Routing directions are per-domain-pair, not a universal axis.** The
+cross-domain cosine matrix reveals the structure:
+
+|  | cold | sharp | bright | heavy |
+|--|------|-------|--------|-------|
+| cold | 1.00 | +0.28 | +0.06 | +0.58 |
+| sharp | +0.28 | 1.00 | +0.03 | +0.37 |
+| bright | +0.06 | +0.03 | 1.00 | +0.14 |
+| heavy | +0.58 | +0.37 | +0.14 | 1.00 |
+
+Cold and heavy share substantial structure (cos 0.58) — both route between
+a physical-measurement domain and an emotional domain. Sharp and cold share
+less (0.28). Bright is nearly orthogonal to all others (0.03–0.14) because
+it routes to intelligence, a different target domain. The routing direction
+is determined by the pair of domains being mapped between, not by a
+shared literalness feature. Cross-domain injection confirms this: injecting
+the cold routing direction into a sharp-metaphorical context pushes
+predictions toward temperature tokens ("below, lower"), not toward blade
+tokens — each direction routes to its own literal domain.
+
+This explains why literal/metaphorical has Tier 3 consistency: there is no
+single metaphor axis because there is no single target domain. Probing
+classifiers trained on cold-metaphor would transfer to heavy-metaphor (same
+target domain) but not to bright-metaphor (different target domain).
 
 ### 6.4 Axis consistency predicts causal potency
 
@@ -722,9 +932,10 @@ vectors.
 projection reads the bottom-of-chain entity as the top logit. The
 representation is scale-invariant: contrasting "Alice is taller than Bob" vs
 "Bob is taller than Alice" and the same pair with "richer" yields cosine > 0.98
-between the two contrastive vectors. PCA of the 6 permutations' raw hidden
-states (not using the contrastive projection) reveals a 2D structure (SVD:
-60% + 28%) where orderings sharing the same bottom entity cluster together.
+between the two contrastive vectors. Separately, PCA of the 6 permutations'
+raw hidden states reveals a 2D structure (SVD: 60% + 28%) where orderings
+sharing the same bottom entity cluster together; this geometric analysis is
+supplementary to the contrastive results.
 
 **Query mechanism:** Contrasting "Who is the shortest?" vs "Who is the
 tallest?" at the question position reads a semantic direction. At the answer
@@ -755,13 +966,11 @@ writes it (attention vs MLP decomposition), and which head carries it
 
 ### What the readout means
 
-The contrastive projection reads continuation preparations: token-shaped
-content the model has written into the residual stream for use at current
-or future positions. This content is aligned with W_U's token rows. The
-token labels are W_U's nearest-neighbour assignments to directions in the
-residual stream — names for what the model is computing, verified by three
-independent tests: causal injection (§3.1), dose-response (§3.2), and MLP
-neuron correspondence (§3.3).
+The contrastive projection reads the model's internal representations in
+token space. W_U assigns token labels to directions in the residual
+stream; these labels name the features the model has detected and is
+operating on, verified by three independent tests: causal injection
+(§3.1), dose-response (§3.2), and MLP neuron correspondence (§3.3).
 
 When the readout produces uninterpretable tokens, the target signal is
 typically still present but superposed with other signals. Multi-contrast
@@ -869,9 +1078,9 @@ boundaries (§5.3).
 
 ## Acknowledgements
 
-This research was conducted with Claude (Anthropic) as a collaborative tool. The
-human author directed all research questions, validated all claims, and takes
-full responsibility. Code and data at [REPO].
+This research was conducted with Claude (Anthropic) and Gemini (Google) as
+collaborative tools. The human author directed all research questions,
+validated all claims, and takes full responsibility. Code and data at [REPO].
 
 ---
 
