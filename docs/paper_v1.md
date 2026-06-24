@@ -6,46 +6,30 @@
 
 ## Abstract
 
-We present a training-free method for reading a transformer's internal
-representations. Given two inputs that differ in a controlled way — e.g.,
-"The hot dog was" vs "The cold dog was" — we subtract their hidden states
-at each layer and project the difference through the unembedding matrix W_U.
-This produces a layer-by-layer readout in token space of what separates
-the two inputs. For the hot-dog case, at layers where the logit lens reads
-identical function words for both inputs, the contrastive projection reads
-"fried, crispy, delicious" — food vocabulary absent from either input's
-logit-lens top-20. The method requires one matrix multiply per layer-position
-pair, no probes to train, and no learned parameters.
+Subtracting the hidden states of two matched inputs at each layer and
+projecting through the unembedding matrix W_U produces a training-free,
+layer-by-layer readout of what separates them in token space. The
+subtraction desuperposes the residual stream: it cancels shared content
+and isolates the axis of variation, reading features invisible to the
+logit lens on either input alone.
 
-The subtraction performs desuperposition: the residual stream carries
-multiple signals in superposition, and subtracting matched inputs cancels
-shared content, isolating the axis of variation. Per-position reading traces
-where a distinction first appears; attention and MLP decomposition identifies
-which component writes it; per-head decomposition identifies which head
-carries it.
+We validate the method in three ways: causal injection recovers the
+prediction gap (z = 223–4249); dose-response confirms directional
+specificity; and MLP neurons whose fc1 weights detect the same features
+gate selectively on the contrast (67 strictly gated neurons across 18
+tested contrasts, disproportionately impactful when ablated). For
+compositional contrasts, multi-contrast triangulation recovers token-shaped
+causal content that single-pair readout misses (1% → 77% for "caught a
+cold").
 
-We validate in three ways. (1) Injecting the contrastive component into the
-opposing input recovers the prediction gap (z = 223–4249 across four cases).
-(2) Dose-response tests confirm the direction, not just the subspace, is
-causal. (3) MLP neurons whose fc1 weights detect the same features the
-method reads gate selectively on the contrast; across 18 contrasts, every
-case produces strictly gated neurons (67 total across 18 contrasts, out of
-10,240 per layer). The features the method reads externally correspond to
-features the model detects internally.
-
-For compositional contrasts where a single pair produces uninterpretable readouts,
-multi-contrast triangulation — averaging across multiple baselines —
-recovers the shared causal component: for "caught a cold" contrasted against
-five baselines, recovery rises from 1% to 77% (reading "doctor, doctors,
-rest").
-
-We apply the method to Phi-2 (2.7B), tracing compound-noun recognition to
-a two-hop MLP→attention circuit confirmed by activation patching, replicating
-IOI name-mover heads and factual recall concentration, distinguishing real
-factual recall from hallucinated name fragments, identifying a weekend
-discontinuity in successor heads, and mapping 15 semantic axes across four
-models — including a causal demonstration that metaphor is processed by
-per-domain routing rather than a figurativity flag. We release code and data.
+Applied to Phi-2 (2.7B), the method traces compound-noun recognition to a
+two-hop MLP→attention circuit, replicates IOI name-mover heads and factual
+recall concentration, distinguishes recall from hallucination, reveals
+that parametric knowledge triggers correction rather than override when
+contradicted, identifies scalar implicature in the residual stream, and
+demonstrates causally that metaphor is per-domain routing rather than a
+figurativity flag — across 15 semantic axes and four models. We release
+code and data.
 
 ---
 
