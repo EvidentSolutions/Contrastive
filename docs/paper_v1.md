@@ -627,9 +627,22 @@ These heads have the largest contrastive norms at L24 and read IO-name tokens
 when projected through W_U. No other head exceeds norm 3.0 consistently. This
 identifies candidate name-mover heads — the same functional role that Wang
 et al. found in GPT-2 via circuit analysis, here located in Phi-2 using only
-contrastive projection. Causal
-verification (e.g., ablating these heads) would be needed to confirm they are
-necessary for the computation.
+contrastive projection.
+
+**Causal test.** Ablating all three heads at L24 (zeroing their pre-projection
+output at the last position) reduces P(Mary) from 0.696 to 0.685 — a 1.1%
+drop. Individual ablation: H14 reduces by 0.2%, H16 by 0.9%, H1 has no
+effect. Ablating three control heads (H0, H5, H10) produces a comparable
+0.3% drop. The generation does not change ("Mary because John was thirsty"
+in both cases). The same pattern holds across three name pairs.
+
+The contrastive norm identifies which heads *carry* the IO name signal, but
+these heads are not individually or jointly necessary for the prediction.
+The model distributes the computation redundantly — the IO name is
+retrievable even without the heads that carry the largest contrastive
+signal. This is a limitation of contrastive norm as a circuit-identification
+tool: large contrastive norm indicates signal presence, not causal
+necessity.
 
 **Accuracy:** 30/30 across 5 name pairs × 3 templates on Phi-2 (100%),
 30/30 on Pythia-1.4B (100%), 29/30 on Pythia-410M (97%).
@@ -930,49 +943,7 @@ token-readability depends on consistency.
 
 ---
 
-## 7. Ordering mechanism
-
-Phi-2 solves 3-entity transitive ordering problems ("Alice is taller than Bob.
-Bob is taller than Carol. Who is the shortest?") with 100% accuracy across 22
-variations (different names, properties, premise orders, distractors) when
-querying endpoints (tallest/shortest). The mechanism does not extend to
-middle-position queries on longer chains — with 5 entities, the model cannot
-identify the 2nd or 3rd tallest from pairwise comparisons without first
-generating the sorted list (see supplementary).
-
-**Method:** We contrast all 6 permutations of the 3-entity ordering against
-each other and project through W_U at the final premise position and the
-answer position. For scale-invariance, we contrast the same ordering across
-different properties (e.g., "taller" vs "richer" with the same name
-assignments) and measure cosine similarity of the contrastive difference
-vectors.
-
-**Representation:** At the chain-completion position, the contrastive
-projection reads the bottom-of-chain entity as the top logit. The
-representation is scale-invariant: contrasting "Alice is taller than Bob" vs
-"Bob is taller than Alice" and the same pair with "richer" yields cosine > 0.98
-between the two contrastive vectors. Separately, PCA of the 6 permutations'
-raw hidden states reveals a 2D structure (SVD: 60% + 28%) where orderings
-sharing the same bottom entity cluster together; this geometric analysis is
-supplementary to the contrastive results.
-
-**Query mechanism:** Contrasting "Who is the shortest?" vs "Who is the
-tallest?" at the question position reads a semantic direction. At the answer
-position (L24), this direction selects the correct endpoint from the ordering
-representation.
-
-**Multi-scale limitation:** When two independent orderings are present
-(richness + height), the scale-invariant mechanism confuses them. The
-contrastive projection shows the model blending the two orderings rather than
-maintaining them separately.
-
-**Scaling:** Pythia-410M and 1.4B show no ordering signal in the contrastive
-projection (only name/position bias). The mechanism emerges between 1.4B and
-2.7B.
-
----
-
-## 8. Discussion
+## 7. Discussion
 
 ### What the method does
 
@@ -1061,18 +1032,27 @@ hands off to heavier tools for causal verification.
 
 ---
 
-## 9. Related work
+## 8. Related work
 
 **Contrastive activation methods.** RepE (Zou et al. 2023), ActAdd (Turner et
 al. 2023), CAA (Rimsky et al. 2024) use matched-pair subtraction for steering.
-Du et al. (2026) apply it to R1-style reasoning models. We use the same
-arithmetic for reading, with per-position tracing and attention/MLP
-decomposition.
+Du et al. (2026) apply it to R1-style reasoning models. Li et al. (2024)
+use contrastive pairs to study internal representations of truthfulness.
+We use the same arithmetic for reading, with per-position tracing and
+attention/MLP decomposition.
 
 **Logit and tuned lens.** nostalgebraist (2020), Belrose et al. (2023). Project
 individual states through W_U. The contrastive projection reads the content
 that differs between two inputs — a different subspace from what the logit lens
 shows for either input individually.
+
+**Probing and linear representations.** Linear probes (Belinkov 2022) train
+classifiers on hidden states to detect features. Our method achieves a
+related decomposition without training — the contrastive subtraction is a
+zero-shot linear probe along the axis defined by the input pair. Burns et al.
+(2023) extract truth directions from contrast pairs using unsupervised
+methods; our multi-contrast triangulation is a related technique applied to
+arbitrary semantic axes rather than truth specifically.
 
 **Superposition and sparse autoencoders.** Elhage et al. (2022) characterized
 superposition in toy models. Bricken et al. (2023) and Templeton et al. (2024)
@@ -1086,12 +1066,17 @@ rather than unsupervised feature discovery.
 **Circuit analysis and causal tracing.** Wang et al. (2023) reverse-engineered
 the IOI circuit in GPT-2 via path patching. Meng et al. (2022) used causal
 tracing to localize factual associations. Gould et al. (2024) identified
-successor heads via attention pattern analysis. Our method recovers the key
-observational findings from these papers (which layers, which heads, which
-content) but does not establish causality — it is an exploratory complement
-to these causal techniques. For successor heads, the per-head contrastive
-decomposition additionally reveals the discontinuity structure at temporal
-boundaries (§5.4).
+successor heads via attention pattern analysis. Conmy et al. (2023) automated
+circuit discovery via ACDC. Our method recovers the key observational findings
+from these papers (which layers, which heads, which content) but does not
+establish causality — it is an exploratory complement to these causal
+techniques.
+
+**Factual recall and knowledge editing.** Geva et al. (2023) traced factual
+associations to MLP layers. Hernandez et al. (2024) studied linearity of
+relational knowledge. Our hallucination detection (§5.3) and parametric
+correction (§5.5) results connect to this line: the contrastive method
+reads what was retrieved, and for fictional entities the retrieval is empty.
 
 ---
 
@@ -1105,12 +1090,21 @@ validated all claims, and takes full responsibility. Code and data at [REPO].
 
 ## References
 
-Belrose, N., et al. (2023). Eliciting latent predictions with the tuned lens.
+Belinkov, Y. (2022). Probing classifiers: Promises, shortcomings, and advances. *Computational Linguistics* 48(1).
+Belrose, N., et al. (2023). Eliciting latent predictions from transformers with the tuned lens. *NeurIPS 2023*.
+Bricken, T., et al. (2023). Towards monosemanticity: Decomposing language models with dictionary learning. *Anthropic*.
+Burns, C., et al. (2023). Discovering latent knowledge in language models without supervision. *ICLR 2023*.
+Conmy, A., et al. (2023). Towards automated circuit discovery for mechanistic interpretability. *NeurIPS 2023*.
 Du, Y., et al. (2026). From latent signals to reflection behavior.
-Gould, S., et al. (2024). Successor heads.
-Meng, K., et al. (2022). Locating and editing factual associations in GPT.
-nostalgebraist. (2020). interpreting GPT: the logit lens.
-Rimsky, N., et al. (2024). Steering Llama 2 via CAA.
-Turner, A., et al. (2023). Activation addition.
-Wang, K., et al. (2023). Interpretability in the wild: IOI circuit.
-Zou, A., et al. (2023). Representation engineering.
+Elhage, N., et al. (2022). Toy models of superposition. *Anthropic*.
+Geva, M., et al. (2023). Dissecting recall of factual associations in auto-regressive language models. *EMNLP 2023*.
+Gould, S., et al. (2024). Successor heads: Recurring, interpretable attention heads in the wild. *ICLR 2024*.
+Hernandez, E., et al. (2024). Linearity of relation decoding in transformer language models. *ICLR 2024*.
+Li, K., et al. (2024). Inference-time intervention: Eliciting truthful answers from a language model. *NeurIPS 2024*.
+Meng, K., et al. (2022). Locating and editing factual associations in GPT. *NeurIPS 2022*.
+nostalgebraist. (2020). interpreting GPT: the logit lens. *LessWrong*.
+Rimsky, N., et al. (2024). Steering Llama 2 via contrastive activation addition. *ACL 2024*.
+Templeton, A., et al. (2024). Scaling monosemanticity. *Anthropic*.
+Turner, A., et al. (2023). Activation addition: Steering language models without optimization. *arXiv:2308.10248*.
+Wang, K., et al. (2023). Interpretability in the wild: A circuit for indirect object identification in GPT-2 small. *ICLR 2023*.
+Zou, A., et al. (2023). Representation engineering: A top-down approach to AI transparency. *arXiv:2310.01405*.
