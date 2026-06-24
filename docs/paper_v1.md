@@ -124,7 +124,11 @@ relative norm ||Δh|| / ||h_c|| to remove this scale artifact. Bypassing LN_f
 means the projection relies on directional alignment between the residual
 stream and W_U rather than the calibrated magnitude that LN_f would provide;
 relative magnitude comparisons across layers should be interpreted
-accordingly.
+accordingly. One contributing factor to the directional robustness may be that
+the residual stream carries massive activations along a small number of
+near-constant directions shared across tokens (Sun et al. 2026); such shared
+components cancel under the subtraction h_c − h_k. We do not test this
+mechanism directly.
 
 **Why W_U, not W_E.** The input embedding matrix W_E is an alternative
 projection target — fc1 reads from the residual stream, which originates as
@@ -1053,11 +1057,16 @@ hands off to heavier tools for causal verification.
 al. 2023), CAA (Rimsky et al. 2024) use matched-pair subtraction for steering.
 Du et al. (2026) apply it to R1-style reasoning models. Li et al. (2024)
 use contrastive pairs to study internal representations of truthfulness.
+Ma et al. (2026) contrast contextualized and non-contextualized logits to
+locate and rectify conflict-inducing layers; they intervene to resolve
+knowledge conflicts, whereas we use the same contrast only to read.
 We use the same arithmetic for reading, with per-position tracing and
 attention/MLP decomposition.
 
 **Logit and tuned lens.** nostalgebraist (2020), Belrose et al. (2023). Project
-individual states through W_U. The contrastive projection reads the content
+individual states through W_U. Pal et al. (2023, Future Lens) show a single
+hidden state also carries information about tokens several positions ahead.
+The contrastive projection reads the content
 that differs between two inputs — a different subspace from what the logit lens
 shows for either input individually.
 
@@ -1076,7 +1085,12 @@ monosemantic features. Our multi-contrast triangulation achieves a related
 decomposition — isolating one signal from superposition — using paired inputs
 rather than learned dictionaries. The MLP neuron correspondence (§3.3) connects
 to the neuron-level analysis in this literature but uses contrastive gating
-rather than unsupervised feature discovery.
+rather than unsupervised feature discovery. Lange et al. (2026) report that the
+sparsity objectives used to train cross-layer transcoders can incentivize
+circuits that match behavior while rewriting deep computation into shallow
+form. Our reading has no learned dictionary and no sparsity penalty, so it is
+not subject to that particular incentive; it also does not recover circuit
+topology, and we make no broader faithfulness claim.
 
 **Circuit analysis and causal tracing.** Wang et al. (2023) reverse-engineered
 the IOI circuit in GPT-2 via path patching. Meng et al. (2022) used causal
@@ -1115,10 +1129,14 @@ Elhage, N., et al. (2022). Toy models of superposition. *Anthropic*.
 Geva, M., et al. (2023). Dissecting recall of factual associations in auto-regressive language models. *EMNLP 2023*.
 Gould, S., et al. (2024). Successor heads: Recurring, interpretable attention heads in the wild. *ICLR 2024*.
 Hernandez, E., et al. (2024). Linearity of relation decoding in transformer language models. *ICLR 2024*.
+Lange, G., et al. (2026). Cross-layer transcoders are incentivized to learn unfaithful circuits. *LessWrong*.
 Li, K., et al. (2024). Inference-time intervention: Eliciting truthful answers from a language model. *NeurIPS 2024*.
+Ma, X., et al. (2026). CoRect: Context-aware logit contrast for hidden state rectification to resolve knowledge conflicts. *arXiv:2602.08221*.
 Meng, K., et al. (2022). Locating and editing factual associations in GPT. *NeurIPS 2022*.
 nostalgebraist. (2020). interpreting GPT: the logit lens. *LessWrong*.
+Pal, K., et al. (2023). Future Lens: Anticipating subsequent tokens from a single hidden state. *CoNLL 2023*.
 Rimsky, N., et al. (2024). Steering Llama 2 via contrastive activation addition. *ACL 2024*.
+Sun, S., et al. (2026). The spike, the sparse and the sink: Anatomy of massive activations and attention sinks. *arXiv:2603.05498*.
 Templeton, A., et al. (2024). Scaling monosemanticity. *Anthropic*.
 Turner, A., et al. (2023). Activation addition: Steering language models without optimization. *arXiv:2308.10248*.
 Wang, K., et al. (2023). Interpretability in the wild: A circuit for indirect object identification in GPT-2 small. *ICLR 2023*.
