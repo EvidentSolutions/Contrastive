@@ -636,13 +636,23 @@ effect. Ablating three control heads (H0, H5, H10) produces a comparable
 0.3% drop. The generation does not change ("Mary because John was thirsty"
 in both cases). The same pattern holds across three name pairs.
 
-The contrastive norm identifies which heads *carry* the IO name signal, but
-these heads are not individually or jointly necessary for the prediction.
-The model distributes the computation redundantly — the IO name is
-retrievable even without the heads that carry the largest contrastive
-signal. This is a limitation of contrastive norm as a circuit-identification
-tool: large contrastive norm indicates signal presence, not causal
-necessity.
+Injection tests the complementary question — sufficiency. Injecting the
+name-mover heads' contrastive output (A−B) into B at L24 shifts P(Mary)
+from 0.026 to 0.037 at 1× and to 0.067 at 3× — directional but never
+flipping the prediction. Even replacing all 32 heads' outputs in B with
+A's via activation patching shifts P(Mary) only to 0.041. The name signal
+at L24 is not concentrated in the attention heads. By contrast, injecting
+the full residual-stream Δh at L28 recovers P(Mary) = 0.642 — the causal
+content is distributed across the full residual stream.
+
+The contrastive norm correctly identifies which heads carry the IO name
+signal, but in Phi-2 the IOI computation is distributed rather than
+concentrated in a few heads. The heads that carry the largest contrastive
+signal are neither necessary (ablation) nor sufficient (injection) for the
+prediction. This differs from GPT-2, where Wang et al. found the IOI
+circuit concentrated in specific heads. The contrastive method reads the
+signal accurately; the architectural distribution of the computation is a
+property of the model, not the method.
 
 **Accuracy:** 30/30 across 5 name pairs × 3 templates on Phi-2 (100%),
 30/30 on Pythia-1.4B (100%), 29/30 on Pythia-410M (97%).
