@@ -671,14 +671,37 @@ residual-stream Δh at L28 drives P(Mary) to 0.642. The decision is carried by
 the cumulative residual stream, not by any layer's attention write at the
 final position.
 
-**An inhibition-preserving contrast surfaces structural signal.** Contrasting
+**A structure-preserving contrast surfaces a name-invariant signal.** Contrasting
 the IOI prompt against a no-duplicate baseline (giver = a third name, "Sam")
 keeps the duplicate-detection computation in the subtraction. This surfaces
 different heads — at L26 one reads the giver name ("Sam"), others read
-structural tokens — but the routing signal does not project to clean,
-interpretable tokens through W_U. The inhibition computation is present and
-contrast-isolable, but it is structural rather than token-shaped, unlike the
-name-identity content.
+structural tokens — and the resulting delta does not project to clean tokens
+through W_U.
+
+W_U-illegibility alone is weak evidence for structure, however: the logit lens
+is a single linear readout, and token content can be superposed in a basis it
+cannot decode. We test the claim directly with prompt design rather than a
+trained probe. Build a family of eight name-sets that share the IOI structure
+but vary the token identities (John/Mary, Alice/Bob, …), and form both contrasts
+at END for each set. As depth increases the two diverge sharply: the name-swap
+(token) direction rotates with the names and collapses toward orthogonality
+across the family (mean pairwise cosine +0.73 at L20 → +0.21 at L24 → +0.01 at
+L28), whereas the no-duplicate direction stays aligned (+0.83 → +0.66 → +0.37).
+Averaging each contrast over the family — which cancels token-specific
+components and keeps the shared one — preserves 0.83 of the no-duplicate norm at
+L24 against 0.56 for the name-swap. The averaged name-swap survivor reads as
+W_U junk (its per-set reads are clean but different names — "Mary", "Sam" — that
+cancel), while the averaged no-duplicate survivor reads as identity-free
+recipient-role content ("charity, share, shop, others"). Position-resolved
+attention agrees: heads H12 and H20 read END→duplicate-position across all eight
+name-sets (0.16–0.37), keying on the *position* regardless of which name fills
+it — a structural signature that never touches W_U.
+
+The signal is therefore present, contrast-isolable, and structural rather than
+token-shaped — name-invariant where the name-identity content is not. (The
+surviving direction reads as the recipient role, which is broader than
+"inhibition" specifically; separating routing from recipient-role content would
+need a further control.)
 
 **Tracing the path by position-resolved patching.** The corrupted (swapped)
 prompt differs from the clean one in a *single* input token — the second
