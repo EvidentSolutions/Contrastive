@@ -52,8 +52,8 @@ isolates one axis of variation from the residual stream's superposed content.
 
 The arithmetic is identical to computing a RepE/ActAdd steering vector (Zou
 et al. 2023; Turner et al. 2023) and reading it through a logit lens
-(nostalgebraist 2020). The novelty is not the subtraction but three things
-built on it:
+(nostalgebraist 2020). The novelty is the systematic application to *reading* rather than steering,
+and three specific techniques built on it:
 
 1. **Systematic trajectory reading.** Per-position tracing locates where a
    distinction first appears and how it flows between positions. Per-head
@@ -177,8 +177,8 @@ isolates one axis of variation but the readout contains the shared signal
 superposed with content specific to that baseline. When the target concept
 is a single entity (a name, a city), the pair-specific content is small
 and the readout is clean. When the target is compositional (a food compound,
-a moral judgment, a quantifier's
-pragmatic force), pair-specific content can dominate the readout, producing
+a moral judgment, a quantifier's pragmatic force), pair-specific content
+can dominate the readout, producing
 uninterpretable tokens. Each baseline contributes its own legitimate
 signals — "fish" adds fishing-related content, "bus" adds transportation
 content — superposed with the shared illness signal. Multi-contrast
@@ -186,66 +186,7 @@ triangulation — contrasting the same target against several baselines and
 averaging — cancels the signals that vary across baselines and preserves
 the shared causal component.
 
-We verify this empirically. For "She caught a cold" vs "She caught a fish,"
-we project the single-pair Δh onto the subspace spanned by the W_U rows of
-its top-20 and bottom-20 tokens (40 directions total, orthogonalized via QR
-decomposition) and inject only this token-subspace component. This recovers
-1% of the prediction gap — the token-readable part of the single-pair Δh is
-not where the causal content lives. (By contrast, injecting the full
-unrestricted Δh at the same layer recovers 69% — the causal content is
-present but not aligned with the loudest W_U directions.) The same
-case triangulated against five baselines yields a shared component reading
-"doctor, doctors, rest, see" that recovers 77%. The five baselines are:
-
-- "She caught a **fish** and went to" (physical catch)
-- "She caught a **ball** and went to" (physical catch)
-- "She caught a **bus** and went to" (transportation)
-- "She caught a **thief** and went to" (apprehension)
-- "She caught a **glimpse** and went to" (perception)
-
-Each baseline shares the "caught a ___" frame but differs in what was caught.
-The shared component across all five contrasts — what "cold" has that fish,
-ball, bus, thief, and glimpse do not — is the illness signal. Multi-contrast
-averaging isolates this from the pair-specific content (e.g., medical vs
-fishing in the cold/fish pair alone) that dominates the single-pair readout
-(Table 1).
-
-**Granularity.** Multi-contrast averaging recovers what is shared across
-baselines, but cannot determine whether the result is a single feature or
-a stable bundle of co-occurring features. Entity-identity contrasts
-(Mary/John) recover a component that corresponds to one token.
-Compositional contrasts (illness, food-compound) may recover a bundle:
-"doctor, rest, see" could reflect co-activated medical, recovery, and
-action features rather than a single "illness" feature. MLP neuron
-correspondence (§3.3) shows that individual neurons detect specific
-sub-features within these components, but the model may compose multiple
-neuron-level features into higher-level representations that trigger
-downstream neurons — so neuron-level atomicity does not imply
-representation-level atomicity. We do not claim to recover atomic
-features. The method recovers the shared causal component at the
-granularity the contrast design provides.
-
-| Case | Single-pair recovery | Multi-contrast recovery | Shared component reads |
-|------|---------------------|------------------------|----------------------|
-| IOI (Mary/John) | 84% | — (not needed) | Mary, mary |
-| Capital (Paris/Berlin) | 97% | — (not needed) | Paris, French |
-| Caught a cold | 1% | 77% | doctor, doctors, rest |
-| Theft/moral | 4% | 75% | evade, hoped, evasion |
-| Hot dog food | 11% | 49% | crispy, charred, cooked |
-| Some/all (partitive) | -40% | 101% | some, Some, SOME |
-
-*Table 1. Single-pair W_U projection vs. multi-contrast triangulation.
-Entity-identity contrasts (top rows) desuperpose trivially. Compositional
-contrasts (bottom rows) require multiple baselines to isolate the
-token-shaped causal signal from pair-specific content.*
-
-W_U contributes the interpretable token labels. Trajectory smoothness
-(consecutive-layer cosine ~0.9) is a general property of the residual stream,
-not specific to meaningful contrasts: unrelated pairs ("The hot dog was" vs
-"Quantum mechanics is") are equally smooth (0.93 ± 0.01, N=40) as minimal
-pairs (0.88 ± 0.03, N=6), because any two residual streams diverge gradually.
-Random directions give cosine ≈ 0.00 (z = 64–93), confirming Δh is structured
-rather than noise, but smoothness alone does not validate content.
+We verify this empirically in §3.4.
 
 ---
 
@@ -268,8 +209,8 @@ directions of matched norm.
 | Successor → Tuesday | 0% | 0% | 0% | 11% | 87% | 98% | 223 |
 
 All four cases show zero recovery at early layers, onset at the layer where
-the contrastive projection first reads coherent content, and near-complete
-or over-complete recovery by L28–31. Random directions of the same norm give
+the contrastive projection first reads coherent content, and substantial
+recovery by L28–31 (75–150%). Random directions of the same norm give
 zero mean recovery at every layer (z-scores measure how far the real direction
 exceeds this null).
 
@@ -303,38 +244,57 @@ contrast triangulation experiments (§2.4, Table 1) provide the held-out
 generalization test, where the shared component is extracted from one set of
 baselines and recovery is measured on a different baseline.
 
-| Target prompt | Baseline top-1 | +0.25× | +0.50× | +1.0× |
-|---------------|---------------|--------|--------|-------|
-| The cold dog was | sh (0.45) | sh (0.10) | tasty (0.06) | tasty (0.06), served (0.05) |
-| The angry dog was | barking (0.31) | barking (0.34) | barking (0.35) | cooked (0.05) |
+| Target prompt | Baseline | +0.50× | +1.0× |
+|---------------|----------|--------|-------|
+| The cold dog was | sh[ivering] (0.45) | tasty (0.06) | more (0.07) |
+| The angry dog was | barking (0.31) | barking (0.34) | cooked (0.05) |
+
+Greedy generation confirms the shift is semantic, not a single-token
+artifact:
+
+| Prompt | Injection | Greedy continuation |
+|--------|-----------|-------------------|
+| The cold dog was | baseline | shivering in the snow, so the owner put a coat on it. |
+| The cold dog was | +0.50× | more popular than the hot dog because the cold dog was more refreshing. |
+| The cold dog was | +1.00× | more expensive than the hamburger because the hamburger was made with... |
+| The angry dog was | baseline | barking loudly at the mailman. |
+| The angry dog was | +1.00× | more expensive than the hamburger because the hamburger was cheaper. |
 
 Subtracting the direction from "The hot dog was" reverses the effect:
 
-| Fraction | Top-1 | P(top-1) | Interpretation |
-|----------|-------|----------|----------------|
-| baseline | too | 0.088 | food item |
-| −0.50× | more | 0.122 | weakening |
-| −1.00× | pant[ing] | 0.234 | animal |
-| −1.50× | pant[ing] | 0.297 | animal (stronger) |
+| Prompt | Injection | Greedy continuation |
+|--------|-----------|-------------------|
+| The hot dog was | baseline | too spicy for the child... |
+| The hot dog was | −1.00× | more popular than the cold dog because the hot dog was more appetizing. |
+| The hot dog was | −1.50× | panting heavily, so the owner gave it some water to cool down. |
 
-The minimum dose that flips top-1 prediction is 0.30× for cold dog (where
-"cold" partially aligns with food) and 0.65× for angry dog (where "angry"
-strongly primes the animal reading).
+At +1.0×, "The cold dog was" generates a food-comparison sentence. At −1.5×,
+"The hot dog was" generates an animal-care sentence. The minimum dose that
+flips top-1 prediction is 0.30× for cold dog (where "cold" partially aligns
+with food) and 0.65× for angry dog (where "angry" strongly primes the animal
+reading).
 
 **Truth direction.** We extract a truth/falsity direction by averaging the
 contrastive (true statement minus false statement) for five fact pairs (Paris/
 France, water/0°, Sun/star, dogs/mammals, Tokyo/Japan) at the prediction
 position. Injecting into false statements:
 
-| Target prompt | Baseline | +0.50× truth | +1.0× truth |
-|---------------|---------|-------------|-------------|
-| Paris is not the capital of France. This statement is | false (0.31) | true (0.29) | true (0.42) |
+| Prompt | Injection | Greedy continuation |
+|--------|-----------|-------------------|
+| Paris is not the capital of France. This statement is | baseline | false. Paris is the capital of France. |
+| Paris is not the capital of France. This statement is | +0.50× truth | true. |
+| Paris is not the capital of France. This statement is | +1.00× truth | true. |
+| Dogs are reptiles. This statement is | baseline | false. |
+| Dogs are reptiles. This statement is | +1.00× truth | true. |
 
 Subtracting from true statements:
 
-| Target prompt | Baseline | −1.0× truth | −1.5× truth |
-|---------------|---------|-------------|-------------|
-| Paris is the capital of France. This statement is | true (0.37) | false (0.25) | false (0.32), incorrect (0.13) |
+| Prompt | Injection | Greedy continuation |
+|--------|-----------|-------------------|
+| Paris is the capital of France. This statement is | baseline | true. |
+| Paris is the capital of France. This statement is | −1.0× truth | false. Paris is the capital of France, but it is not the only city... |
+| The Sun is a star. This statement is | baseline | true because it is a well-established fact in astronomy. |
+| The Sun is a star. This statement is | −1.0× truth | false. The Sun is a star, but it is not the only star in the universe... |
 
 The truth direction has lower cross-pair consistency (mean cos ~0.35) than the
 eatability direction (0.72–0.84), reflecting the fact that "what makes Paris-is-
@@ -365,9 +325,9 @@ language identity, register, code modality, disaster type, and entity size.
 For each case, we identify "strictly gated" neurons: those with pre-GELU
 activation above 0.3 for one input and below 0.05 for the other.
 
-**Every case produces strictly gated neurons.** The count ranges from 1
-(capital France/Germany, formal/informal, agent swap) to 11 (literal vs
-metaphorical cold), with a mean of 3.7 per contrast.
+**All 18 cases produced at least one strictly gated neuron.** The count
+ranges from 1 (capital France/Germany, formal/informal, agent swap) to 11
+(literal vs metaphorical cold), with a mean of 3.7 per contrast.
 
 **Example.** At L20, neuron 7828's fc1 row projected through W_U reads
 "food, edible, delicious, flavorful, Foods." Its pre-GELU activation is
@@ -403,6 +363,75 @@ the same feature that appears in the contrastive readout also appears in
 individual neuron detectors, and these neurons are disproportionately
 impactful when ablated. This confirms that the
 W_U labels reflect internal model structure rather than projection artifacts.
+
+### 3.4 Multi-contrast triangulation recovers compositional signals
+
+For compositional contrasts, single-pair readout may fail because the
+target signal is superposed with pair-specific content. We test whether
+multi-contrast triangulation recovers the causal component.
+
+For "She caught a cold" vs "She caught a fish," we project the single-pair
+Δh onto the subspace spanned by the W_U rows of its top-20 and bottom-20
+tokens (40 directions total, orthogonalized via QR decomposition) and
+inject only this token-subspace component. This recovers 1% of the
+prediction gap — the token-readable part of the single-pair Δh is not
+where the causal content lives. (By contrast, injecting the full
+unrestricted Δh at the same layer recovers 69% — the causal content is
+present but not aligned with the loudest W_U directions.) The same case
+triangulated against five baselines yields a shared component reading
+"doctor, doctors, rest, see" that recovers 77%. The five baselines are:
+
+- "She caught a **fish** and went to" (physical catch)
+- "She caught a **ball** and went to" (physical catch)
+- "She caught a **bus** and went to" (transportation)
+- "She caught a **thief** and went to" (apprehension)
+- "She caught a **glimpse** and went to" (perception)
+
+Each baseline shares the "caught a ___" frame but differs in what was caught.
+The shared component across all five contrasts — what "cold" has that fish,
+ball, bus, thief, and glimpse do not — is the illness signal. Multi-contrast
+averaging isolates this from the pair-specific content (e.g., medical vs
+fishing in the cold/fish pair alone) that dominates the single-pair readout
+(Table 1).
+
+| Case | Single-pair recovery | Multi-contrast recovery | Shared component reads |
+|------|---------------------|------------------------|----------------------|
+| IOI (Mary/John) | 84% | — (not needed) | Mary, mary |
+| Capital (Paris/Berlin) | 97% | — (not needed) | Paris, French |
+| Caught a cold | 1% | 77% | doctor, doctors, rest |
+| Theft/moral | 4% | 75% | evade, hoped, evasion |
+| Hot dog food | 11% | 49% | crispy, charred, cooked |
+| Some/all (partitive) | -40% | 101% | some, Some, SOME |
+
+*Table 1. Single-pair W_U projection vs. multi-contrast triangulation.
+Entity-identity contrasts (top rows) desuperpose trivially. Compositional
+contrasts (bottom rows) require multiple baselines to isolate the
+token-shaped causal signal from pair-specific content.*
+
+**Granularity.** Multi-contrast averaging recovers what is shared across
+baselines, but cannot determine whether the result is a single feature or
+a stable bundle of co-occurring features. Entity-identity contrasts
+(Mary/John) recover a component that corresponds to one token.
+Compositional contrasts (illness, food-compound) may recover a bundle:
+"doctor, rest, see" could reflect co-activated medical, recovery, and
+action features rather than a single "illness" feature. MLP neuron
+correspondence (§3.3) shows that individual neurons detect specific
+sub-features within these components, but the model may compose multiple
+neuron-level features into higher-level representations that trigger
+downstream neurons — so neuron-level atomicity does not imply
+representation-level atomicity. We do not claim to recover atomic
+features. The method recovers the shared causal component at the
+granularity the contrast design provides.
+
+### 3.5 Null model: smoothness is structural, not semantic
+
+W_U contributes the interpretable token labels. Trajectory smoothness
+(consecutive-layer cosine ~0.9) is a general property of the residual stream,
+not specific to meaningful contrasts: unrelated pairs ("The hot dog was" vs
+"Quantum mechanics is") are equally smooth (0.93 +/- 0.01, N=40) as minimal
+pairs (0.88 +/- 0.03, N=6), because any two residual streams diverge gradually.
+Random directions give cosine ~0.00 (z = 64-93), confirming Δh is structured
+rather than noise, but smoothness alone does not validate content.
 
 ---
 
@@ -718,7 +747,7 @@ A separate PCA analysis of the raw hidden states (not using the contrastive
 projection) finds circular geometry for months and days; this is reported in
 the supplementary materials as it does not use the paper's method.
 
-### 5.5 Parametric knowledge vs in-context assertion
+### 5.5 Parametric recall resists counterfactual assertion
 
 When in-context information contradicts parametric knowledge, does the model
 override its stored facts? We test this by asserting a counterfactual capital
@@ -832,7 +861,9 @@ its target domain:
 
 **Causal verification.** We extract routing directions from 4 literal-
 metaphorical pairs per word (pairwise cos 0.64–0.88) and inject them to
-flip the domain. Injecting the cold literal direction (+1.0×) into "The
+flip the domain. Note that the extraction and injection sets overlap —
+the same pairs are used for both — so this tests causal relevance of the
+direction, not held-out generalization. Injecting the cold literal direction (+1.0×) into "The
 reception was extremely cold. The atmosphere was" shifts predictions from
 "chilly" (social) to "below, freezing" (temperature). Reverse injection
 (−1.0×) into "The ice was extremely cold. The temperature was" shifts from
