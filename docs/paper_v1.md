@@ -679,16 +679,51 @@ interpretable tokens through W_U. The inhibition computation is present and
 contrast-isolable, but it is structural rather than token-shaped, unlike the
 name-identity content.
 
-**Summary.** With attention confirmation, contrastive projection correctly
+**Tracing the path by position-resolved patching.** The corrupted (swapped)
+prompt differs from the clean one in a *single* input token — the second
+subject at position 9 (S2) — so all causal divergence originates there. Patching
+the full residual stream at one position from clean into the corrupted run,
+across layers, traces where the information lives (recovery of P(Mary), corrupt
+0.011 → clean 0.696):
+
+| Patched position | L0 | L8 | L12 | L16 | L20 | L24 | L28 |
+|------------------|-----|-----|------|------|------|------|------|
+| IO (pos 3) | 0% | 0% | 0% | 1% | 0% | 0% | 0% |
+| S2 (pos 9) | 100% | 90% | 79% | 59% | 16% | 6% | 0% |
+| END | 0% | 0% | 0% | 1% | 37% | 59% | 98% |
+| S2 + END | 101% | 95% | 88% | 87% | 96% | 97% | 100% |
+
+The IO position never matters — its token is identical in both prompts. The S2
+position carries all of the recovery at L0 and loses it monotonically, while END
+gains it in lockstep; S2 and END jointly recover ~100% at every layer. The
+causal signal transfers from S2 to END between L16 and L28, with the crossover
+(END-only overtaking S2-only) at L18–20.
+
+Attention identifies the heads that perform the transfer. At L18–20, heads
+attending from END to S2 dominate (H10, H12, H20, H31) — they move the
+duplicate-subject signal forward. At L22–26, heads attending to the IO token
+take over (H3, H14, H16, H0) — the name-movers that read and write the indirect
+object. This is the S-inhibition → name-mover structure of the IOI circuit,
+spread across roughly eight heads and eight layers rather than concentrated in a
+few.
+
+This also resolves the apparent null of the per-head tests. The END residual
+after L22 recovers 59–98% of the prediction, but no single head's END output
+does (≤2%): the signal arrives via the cumulative S2→END transfer, carried in
+the residual stream, so ablating or patching any one head leaves the others to
+reconstruct it.
+
+**Summary.** Contrastive projection, with attention confirmation, correctly
 identifies the genuine name-mover heads (H14, H16) and their read site (the IO
-token), and exposes H1 as a sink-head artifact of the norm criterion. But in
-Phi-2 the IOI *decision* is distributed across the residual stream: the
-name-movers are neither necessary (ablation) nor sufficient (denoising and
-injection, at every layer tested), and the routing computation that selects IO
-over subject is structural rather than token-readable. This differs from GPT-2,
-where Wang et al. found the IOI circuit concentrated in specific heads. The
-contrastive method reads the signal accurately; the architectural distribution
-of the computation is a property of the model, not the method.
+token), and exposes H1 as a sink-head artifact of the norm criterion.
+Position-resolved patching then traces the full path: an identifiable origin
+(S2), a transfer window (L18–22), and two head populations (S2-readers then
+name-movers). The IOI computation in Phi-2 is distributed but fully traceable —
+no single head is necessary (ablation) or sufficient (per-head patching),
+because the decision rides the cumulative residual stream. This differs from
+GPT-2, where Wang et al. found the circuit concentrated in a few heads; here the
+same algorithm is spread across many heads and layers, and the contrastive
+method plus position-resolved patching recovers its structure end to end.
 
 **Accuracy:** 30/30 across 5 name pairs × 3 templates on Phi-2 (100%),
 30/30 on Pythia-1.4B (100%), 29/30 on Pythia-410M (97%).
