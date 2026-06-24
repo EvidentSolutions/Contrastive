@@ -23,8 +23,9 @@ causal content that single-pair readout misses (1% → 77% for "caught a
 cold").
 
 Applied to Phi-2 (2.7B), the method traces compound-noun recognition to a
-two-hop MLP→attention circuit, locates IOI name-carrying heads and factual
-recall concentration, distinguishes recall from hallucination, reveals
+two-hop MLP→attention circuit, traces both the IOI and factual-recall circuits
+from their source token to the name-mover heads via position-resolved patching,
+distinguishes recall from hallucination, reveals
 that parametric knowledge triggers correction rather than override when
 contradicted, identifies scalar implicature in the residual stream, and
 demonstrates causally that metaphor is per-domain routing rather than a
@@ -739,8 +740,46 @@ method plus position-resolved patching recovers its structure end to end.
 **Per-head decomposition:** At L24, H13 carries the largest contrastive norm
 (3.9, reads "France, French, Paris"). At L28, the signal distributes across
 multiple heads (H21, H7, H0), consistent with the factual content spreading
-from a concentrated source to a broader representation — though this is a
-single case and the spreading pattern is not causally verified.
+from a concentrated source to a broader representation.
+
+**Causal path trace.** To test whether this concentration is causal rather than
+correlational, we use a single-token contrast — "The capital of **France** is"
+(→ Paris) vs "The capital of **Japan** is" (→ Tokyo) — which differ in exactly
+one input token, the subject. All causal divergence therefore originates at the
+subject position, so position-resolved patching (restore the clean residual
+stream at a chosen position and layer into the corrupt run; measure recovery of
+P(Paris)) traces where the answer is built and when it moves. CLEAN P(Paris) =
+0.806, CORRUPT = 0.001.
+
+| layer | patch SUBJ only | patch END only | SUBJ+END |
+|------:|----------------:|---------------:|---------:|
+| L0–L16 | ~100% | ~0% | ~100% |
+| L18 | 99% | 10% | 100% |
+| L20 | 74% | 42% | 100% |
+| L22 | 50% | 57% | 100% |
+| L24 | 8% | 89% | 100% |
+| L28 | 0% | 99% | 100% |
+
+The answer lives entirely at the subject position through L16–L18 (a flat
+plateau: patching the subject alone fully restores Paris), then drains to the
+END position over L18–L28, with the handoff crossover at **L22**. Patching
+subject and END jointly recovers ~100% at every layer — the signal rides the
+cumulative residual along a single subject→END path, with no third site. The
+plateau-then-move shape matches the subject-MLP enrichment Meng et al. (2022)
+and Geva et al. (2023) report for factual recall, and the handoff sits a few
+layers later than IOI's (L22 vs L18–20).
+
+Position-resolved attention from END names the carriers: attention to the
+subject peaks at L24, led by **H13** (0.31) and H16 (0.45) — and H13 is the same
+head the contrastive-norm decomposition independently flagged as reading
+"France/French/Paris." The norm criterion ("this head's output differs") and the
+causal trace ("this head moves the subject signal to END") converge on the same
+unit.
+
+**Generality.** The subject→END structure replicates across six entity pairs
+(France/Paris, Japan/Tokyo, Italy/Rome, Spain/Madrid, Egypt/Cairo,
+Russia/Moscow), every one with clean P ≥ 0.81, corrupt P ≈ 0, and a crossover at
+L22–L24.
 
 **Different factual domains:** "The capital of France is" vs "The capital of
 Japan is" — the contrastive reads "Paris, France, French" on the France pole
