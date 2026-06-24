@@ -9,8 +9,8 @@
 Subtracting the hidden states of two matched inputs at each layer and
 projecting through the unembedding matrix W_U produces a training-free,
 layer-by-layer readout of what separates them in token space. The
-subtraction desuperposes the residual stream: it cancels shared content
-and isolates the axis of variation, reading features invisible to the
+subtraction desuperposes the residual stream: it cancels the shared content
+and isolates the axis of variation — features invisible to the
 logit lens on either input alone.
 
 We validate the method in three ways: causal injection recovers the
@@ -36,23 +36,23 @@ code and data.
 ## 1. Introduction
 
 A transformer processing "The hot dog was" predicts continuations about food.
-The same model processing "The cold dog was" predicts continuations about an
+The same model given "The cold dog was" predicts continuations about an
 animal. The logit lens (nostalgebraist 2020) projects each hidden state through
 W_U and at intermediate layers reads the same function words for both —
-"not, no, made, a, more." The food distinction is invisible: it is present in
+"not, no, made, a, more." The food distinction is not visible: it is present in
 the residual stream but superposed with other signals that dominate the
 projection.
 
 Subtracting one hidden state from the other before projecting through W_U
 cancels the shared signals and reads what differs. At layers 8–24 for the
-hot-dog case, this contrastive projection reads "fried, crispy, delicious,
+hot-dog case, the contrastive projection reads "fried, crispy, delicious,
 flavor" — food vocabulary absent from either constituent's logit-lens top-20
 (0–1/5 overlap through L24). The subtraction performs desuperposition: it
 isolates one axis of variation from the residual stream's superposed content.
 
-The arithmetic is identical to computing a RepE/ActAdd steering vector (Zou
+The arithmetic is the same as computing a RepE/ActAdd steering vector (Zou
 et al. 2023; Turner et al. 2023) and reading it through a logit lens
-(nostalgebraist 2020). The novelty is the systematic application to *reading* rather than steering,
+(nostalgebraist 2020). What is new is the systematic application to *reading* rather than steering,
 and three specific techniques built on it:
 
 1. **Systematic trajectory reading.** Per-position tracing locates where a
@@ -95,7 +95,7 @@ Given two inputs *c* and *k*:
    top-K most negative tokens (associated with input *k*). The two poles
    together describe the contrast in token space.
 
-No parameters are fit. The choices are the input pair, the read position, and K.
+No parameters are fitted. The choices are the input pair, the read position, and K.
 
 **LayerNorm.** The model's forward pass applies a final LayerNorm (LN_f) before
 W_U. We project raw hidden states, bypassing LN_f. This is deliberate: LN_f
@@ -202,13 +202,13 @@ We verify this empirically in §3.4.
 
 ### 3.1 The full activation delta is causal
 
-The probe is exploratory — it reads a difference, not a cause. As a baseline,
+The probe is exploratory. As a baseline,
 we test whether the full activation delta Δh[L] = h_context[L] − h_control[L]
 contains the causal information by injecting it into the control's residual
 stream at layer L and measuring prediction gap recovery. This is standard
 activation patching: adding Δh to the control effectively replaces its
 activation with the context's at that layer, so recovery at late layers is
-expected. The informative result is the *layer profile* — at which layer does
+expected. The interesting result is the *layer profile* — at which layer does
 recovery onset, and does this match the contrastive readout?
 
 | Case | L4 | L12 | L20 | L24 | L28 | L31 | Peak z |
@@ -218,10 +218,10 @@ recovery onset, and does this match the contrastive readout?
 | Eiffel → Paris | 0% | 0% | 2% | 55% | 73% | 66% | 1778 |
 | Successor → Tuesday | 0% | 0% | 0% | 11% | 87% | 98% | 223 |
 
-Recovery is zero at early layers and substantial by L28–31 (75–150%).
+Recovery is zero at early layers and clear by L28–31 (75–150%).
 Random directions of the same norm give zero mean recovery at every layer
 (z = 223–4249). This establishes that the *direction* of Δh matters, not
-merely its norm — but it does not validate the token-space readout
+just its norm — but it does not validate the token-space readout
 specifically. Section 3.4 tests whether the token-readable component of Δh
 carries the causal content.
 
@@ -266,7 +266,7 @@ artifact:
 | The angry dog was | baseline | barking loudly at the mailman. |
 | The angry dog was | +1.00× | more expensive than the hamburger because the hamburger was cheaper. |
 
-Subtracting the direction from "The hot dog was" reverses the effect:
+Subtracting the same direction from "The hot dog was" reverses the effect:
 
 | Prompt | Injection | Greedy continuation |
 |--------|-----------|-------------------|
@@ -305,7 +305,7 @@ Subtracting from true statements:
 The truth direction has lower cross-pair consistency (mean cos ~0.35) than the
 eatability direction (0.72–0.84), reflecting the fact that "what makes Paris-is-
 the-capital true" and "what makes dogs-are-mammals true" share less structure
-than different food-compound contrasts. Despite this, the direction is
+than different food-compound contrasts. Still, the direction is
 bidirectionally causal for the strongest pairs.
 
 ### 3.3 Contrastive features correspond to MLP internal structure
@@ -356,7 +356,7 @@ input and whose GELU gates selectively. Each neuron detects the same feature
 the contrastive method reads from Δh.*
 
 **Ablation.** Zeroing the strict neurons and measuring the change in output
-distribution (KL divergence from unablated baseline) produces 10–650× larger
+distribution (KL divergence from unablated baseline) gives 10–650× larger
 effects than zeroing the same number of random neurons, across 8 tested
 cases. These neurons are disproportionately relevant to the contrast. The
 absolute output change is small (KL 0.0001–0.005) — the strict neurons are
@@ -364,7 +364,7 @@ part of a distributed computation, not solely responsible for it.
 
 **Scope of the claim.** The strict neurons account for 4–47% of the MLP's
 contrastive output norm (mean ~20%), with cosine alignment 0.03–0.30 to the
-full MLP contrastive output. The claim is correspondence, not completeness:
+full MLP contrastive output. The claim is about correspondence, not completeness:
 the same feature that appears in the contrastive readout also appears in
 individual neuron detectors, and these neurons are disproportionately
 impactful when ablated. This confirms that the
@@ -516,7 +516,7 @@ attention at L6+ copies the compound meaning from "dog" to "was."
 **Mechanism:** Attention at L0 copies "hot" to the "dog" position. The MLP at
 L4 recognizes the compound at the "dog" position ("fried" first appears in the
 MLP output). Attention at L5 broadcasts this from "dog" to "was" (H19,
-attn=0.91). The contrastive projection identified each stage; activation
+attn=0.91). The contrastive projection identified each of these stages; activation
 patching at three positions and multiple layers confirms the information flow.
 
 ### 4.2 Other disambiguation cases
@@ -532,7 +532,7 @@ adjective):
 - L12: "climb, inclined, steep" (terrain pole)
 - L27-28: "bank, banks, banking" reappear in the contrastive projection —
   the noun's representation is revisited after the modifier has disambiguated
-  it. This is consistent with a two-pass pattern (resolve meaning from the
+  it. This is compatible with a two-pass pattern (resolve meaning from the
   modifier, then update the noun representation), though the contrastive
   projection reads content, not mechanism.
 
@@ -737,7 +737,7 @@ Everest's pole reads "Nepal, Tibet, Himal" (geographic knowledge), while
 Silverhorn's reads "1300, 1100, 1200" (number-range priors calibrated to
 "Southern Alps," not specific factual recall).
 
-The contrastive projection does not detect a "hallucination flag." It reads
+The contrastive projection does not find a "hallucination flag." It reads
 what the model has retrieved, and for hallucinated entities, the retrieval is
 empty of factual content — only name tokens and contextual priors remain.
 
@@ -756,7 +756,7 @@ visible as the transition from input-day to output-day content across layers.
 
 **Per-head decomposition at L28:** Decomposing the contrastive signal by
 attention head identifies H11 as the dominant successor head. Its contrastive
-norm reveals a discontinuity at the weekend boundary:
+norm spikes at the Saturday→Sunday and Sunday→Monday transitions:
 
 | Day pair | H11 norm | Next-largest head |
 |----------|----------|------------------|
@@ -768,7 +768,8 @@ norm reveals a discontinuity at the weekend boundary:
 | **Sat→Sun** | **11** | H12 (4) |
 | **Sun→Mon** | **11** | H12 (5) |
 
-H11's norm triples at the weekend boundary. The same head dominates
+H11's norm triples at these two transitions; we do not have evidence for what
+distinguishes them from the weekday transitions. The same head dominates
 month-pair contrasts at L28, with norms 3-9 across all twelve transitions.
 
 H11 dominates the successor signal but does not carry it alone — H20 and H25
@@ -807,7 +808,7 @@ From L20 onward, the dominant signal is "Actually, actually, correct" — the
 model prepares a correction rather than accepting the override. At L28, the
 Paris token logit is *higher* on the counterfactual side (+9.6) than on the
 veridical side — the model strengthens its parametric recall when presented
-with a contradicting assertion. This pattern is consistent across all four
+with a contradicting assertion. The same holds for all four
 country pairs.
 
 **Distance weakens correction.** Inserting distractor text between the
@@ -821,8 +822,8 @@ decays with distance while the asserted content persists.
 it is Paris" — requires the model to have retrieved the parametric fact.
 The hallucination cases in §5.3 show that fictional entities produce no
 factual associations in the contrastive projection. The correction circuit
-and the factual-retrieval circuit may share structure: both require the
-model to have specific knowledge to draw on, and both are visible in the
+and the factual-retrieval circuit may share structure: both require that the
+model has specific knowledge to draw on, and both are visible in the
 contrastive trajectory as the presence or absence of factual content at
 mid-to-late layers.
 
@@ -925,7 +926,7 @@ is determined by the pair of domains being mapped between, not by a
 shared literalness feature. Cross-domain injection confirms this: injecting
 the cold routing direction into a sharp-metaphorical context pushes
 predictions toward temperature tokens ("below, lower"), not toward blade
-tokens — each direction routes to its own literal domain.
+tokens — each direction routes to its respective literal domain.
 
 This explains why literal/metaphorical has Tier 3 consistency: there is no
 single metaphor axis because there is no single target domain. Probing
@@ -966,8 +967,8 @@ token-readability depends on consistency.
 
 ### What the method does
 
-Contrastive projection desuperposes the residual stream along a chosen axis
-of variation. The subtraction cancels signals shared between two inputs;
+Contrastive projection desuperposes the residual stream along one axis
+of variation. The subtraction cancels what is shared between two inputs;
 the W_U projection reads the remainder in token space. The method locates
 where a distinction first appears (per-position reading), which component
 writes it (attention vs MLP decomposition), and which head carries it
@@ -996,7 +997,7 @@ one where the target concept is compositional and superposed with
 pair-specific content — produces tokens that reflect the superposition,
 not the target. Multi-contrast averaging addresses this for cases we tested,
 but we have not established how many baselines are sufficient in general,
-nor whether all model computations can be desuperposed by this technique.
+or whether all model computations can be desuperposed by this technique.
 
 ### Token readability and causal relevance
 
@@ -1042,7 +1043,7 @@ hands off to heavier tools for causal verification.
 - **Desuperposition coverage.** We tested multi-contrast triangulation on
   6 cases and MLP neuron correspondence on 18 cases. We do not know
   whether all model computations can be desuperposed by contrastive
-  subtraction, nor how many baselines are sufficient in general.
+  subtraction, or how many baselines are sufficient in general.
 - **Per-position reading requires tokenization alignment.** The read
   position must correspond to the same structural role in both inputs.
 - **Model coverage.** Primary mechanistic results (§4) on Phi-2 only.
