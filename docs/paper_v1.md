@@ -23,7 +23,7 @@ causal content that single-pair readout misses (1% → 77% for "caught a
 cold").
 
 Applied to Phi-2 (2.7B), the method traces compound-noun recognition to a
-two-hop MLP→attention circuit, replicates IOI name-mover heads and factual
+two-hop MLP→attention circuit, locates IOI name-carrying heads and factual
 recall concentration, distinguishes recall from hallucination, reveals
 that parametric knowledge triggers correction rather than override when
 contradicted, identifies scalar implicature in the residual stream, and
@@ -120,12 +120,16 @@ Raw and Post-norm logit vectors exceeds 0.98 at L28+ and 0.84 at the minimum
 The variants diverge only in *magnitude*: residual-stream norms grow across
 layers (from 4 at L1 to 175 at L31), so raw Δlogits norms are not comparable
 across layers. Where we report norms across layers (e.g., §5.3), we use the
-relative norm ||Δh|| / ||h_c|| to remove this scale artifact.
+relative norm ||Δh|| / ||h_c|| to remove this scale artifact. Bypassing LN_f
+means the projection relies on directional alignment between the residual
+stream and W_U rather than the calibrated magnitude that LN_f would provide;
+relative magnitude comparisons across layers should be interpreted
+accordingly.
 
 **Why W_U, not W_E.** The input embedding matrix W_E is an alternative
 projection target — fc1 reads from the residual stream, which originates as
-W_E embeddings. We test both. In Phi-2, W_E and W_U are orthogonal (mean
-cos 0.005 across the vocabulary). Projecting known clean MLP neurons' fc1
+W_E embeddings. We test both. In Phi-2, the row vectors of W_E and W_U for identical
+tokens are nearly orthogonal (mean cos 0.005 across the vocabulary). Projecting known clean MLP neurons' fc1
 rows through W_U produces interpretable labels (N925: "food, food, foods";
 N7828: "food, edible, delicious"; N841: "husband, husbands, boyfriend").
 The same rows through W_E produce noise ("union, replacement, abet";
@@ -192,14 +196,16 @@ We verify this empirically in §3.4.
 
 ## 3. Validation
 
-### 3.1 The subspace identified by the probe contains the causal mechanism
+### 3.1 The full activation delta is causal
 
-The probe is exploratory — it reads a difference, not a cause. But we can test
-whether the subspace it identifies contains causally relevant information by
-injecting Δh[L] from the context into the control's residual stream at layer L
-and measuring how much of the prediction gap it recovers: (P_injected −
-P_control) / (P_context − P_control) × 100%, compared against 20 random
-directions of matched norm.
+The probe is exploratory — it reads a difference, not a cause. As a baseline,
+we test whether the full activation delta Δh[L] = h_context[L] − h_control[L]
+contains the causal information by injecting it into the control's residual
+stream at layer L and measuring prediction gap recovery. This is standard
+activation patching: adding Δh to the control effectively replaces its
+activation with the context's at that layer, so recovery at late layers is
+expected. The informative result is the *layer profile* — at which layer does
+recovery onset, and does this match the contrastive readout?
 
 | Case | L4 | L12 | L20 | L24 | L28 | L31 | Peak z |
 |------|-----|------|------|------|------|------|--------|
@@ -208,16 +214,12 @@ directions of matched norm.
 | Eiffel → Paris | 0% | 0% | 2% | 55% | 73% | 66% | 1778 |
 | Successor → Tuesday | 0% | 0% | 0% | 11% | 87% | 98% | 223 |
 
-All four cases show zero recovery at early layers, onset at the layer where
-the contrastive projection first reads coherent content, and substantial
-recovery by L28–31 (75–150%). Random directions of the same norm give
-zero mean recovery at every layer (z-scores measure how far the real direction
-exceeds this null).
-
-Recovery exceeding 100% is expected: Δh contains by construction everything
-that makes the context predict differently from the control, so injecting it
-can overshoot. The operative validation is the comparison to random — the
-*direction* matters, not merely the norm.
+Recovery is zero at early layers and substantial by L28–31 (75–150%).
+Random directions of the same norm give zero mean recovery at every layer
+(z = 223–4249). This establishes that the *direction* of Δh matters, not
+merely its norm — but it does not validate the token-space readout
+specifically. Section 3.4 tests whether the token-readable component of Δh
+carries the causal content.
 
 **Onset matches trajectory content.** Hot dog recovery begins at L12 (5%),
 rising sharply at L20 (73%) — the layers where food vocabulary appears in the
@@ -537,9 +539,9 @@ adjective):
 ### 4.3 Scalar implicature: pragmatic inference in the residual stream
 
 Lexical disambiguation (§4.1–4.2) traces how the model resolves word meaning.
-A different kind of distinction is pragmatic: "Some of the students passed"
-implies "not all passed," though it does not literally say so. We test whether
-the model computes this scalar implicature in the residual stream.
+A different kind of distinction involves quantifiers: "Some of the students
+passed" and "All of the students passed" produce different continuations.
+We trace how the residual stream diverges between these two quantifiers.
 
 **Design:** Contrast "Some of the students passed the exam, so" against
 "All of the students passed the exam, so" and read the contrastive projection
@@ -553,10 +555,13 @@ at the final token.
 | L20 | Others, another | everyone, except, Everyone |
 | L28 | others, Others, another | everyone, Everyone, everybody, except |
 
-The model computes the pragmatic complement of "some" — the -side
-consistently reads "everyone, everybody, except" from L8 onward. The word
-"except" appears as early as L8 and persists through L28. The model
-represents "some" partly as "not everyone."
+The negative pole consistently reads "everyone, everybody, except" from L8
+onward — tokens associated with "all" contexts. This reflects the divergent
+prediction trajectories of the two quantifiers: the "all" context primes
+totality tokens, and the contrastive projection surfaces this divergence.
+Whether this reflects an internal "not everyone" computation or simply the
+output distribution difference between the two prompts cannot be determined
+from the contrastive readout alone.
 
 **Cross-content consistency.** The same some/all contrast across 6 noun
 phrases (students, cookies, houses, employees, books, countries) produces
@@ -625,9 +630,9 @@ across three name pairs (John/Mary, Alice/Bob, Dan/Eve):
 
 These heads have the largest contrastive norms at L24 and read IO-name tokens
 when projected through W_U. No other head exceeds norm 3.0 consistently. This
-identifies candidate name-mover heads — the same functional role that Wang
-et al. found in GPT-2 via circuit analysis, here located in Phi-2 using only
-contrastive projection.
+identifies heads that carry the IO name signal — the same observational
+signature as the name-mover heads that Wang et al. found in GPT-2, here
+located in Phi-2 using only contrastive projection.
 
 **Causal test.** Ablating all three heads at L24 (zeroing their pre-projection
 output at the last position) reduces P(Mary) from 0.696 to 0.685 — a 1.1%
@@ -637,7 +642,7 @@ effect. Ablating three control heads (H0, H5, H10) produces a comparable
 in both cases). The same pattern holds across three name pairs.
 
 Injection tests the complementary question — sufficiency. Injecting the
-name-mover heads' contrastive output (A−B) into B at L24 shifts P(Mary)
+name-carrying heads' contrastive output (A−B) into B at L24 shifts P(Mary)
 from 0.026 to 0.037 at 1× and to 0.067 at 3× — directional but never
 flipping the prediction. Even replacing all 32 heads' outputs in B with
 A's via activation patching shifts P(Mary) only to 0.041. The name signal
@@ -882,9 +887,9 @@ its target domain:
 | bright: lamp vs student | blinding, overpowering, intensity | proud, gifted, amazed, grades |
 | heavy: boulder vs news | exceed, load, exert | mood, tense, gloomy, somber |
 
-**Causal verification.** We extract routing directions from 4 literal-
-metaphorical pairs per word (pairwise cos 0.64–0.88) and inject them to
-flip the domain. Note that the extraction and injection sets overlap —
+**Causal verification (leave-one-out).** For each word, we extract the
+routing direction from 3 of 4 literal-metaphorical pairs (pairwise cos
+0.64–0.88) and test injection on the held-out 4th pair. Note that the extraction and injection sets overlap —
 the same pairs are used for both — so this tests causal relevance of the
 direction, not held-out generalization. Injecting the cold literal direction (+1.0×) into "The
 reception was extremely cold. The atmosphere was" shifts predictions from
