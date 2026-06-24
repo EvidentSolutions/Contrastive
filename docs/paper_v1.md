@@ -33,7 +33,7 @@ case produces strictly gated neurons (67 total across 18 contrasts, out of
 10,240 per layer). The features the method reads externally correspond to
 features the model detects internally.
 
-For compositional contrasts where a single pair produces noisy readouts,
+For compositional contrasts where a single pair produces uninterpretable readouts,
 multi-contrast triangulation — averaging across multiple baselines —
 recovers the shared causal component: for "caught a cold" contrasted against
 five baselines, recovery rises from 1% to 77% (reading "doctor, doctors,
@@ -89,8 +89,8 @@ built on it:
    correspond to features the model detects internally. MLP neurons whose fc1
    weights align with the contrastive input direction gate selectively via
    GELU, and their fc2 columns write the same tokens the contrastive method
-   reads. Across 18 contrasts, every case produces strictly gated neurons with
-   the features match the model's internal detector structure.
+   reads. Across 18 contrasts, every case produces strictly gated neurons
+   whose features match the model's internal detector structure.
 
 We apply the method to Phi-2 (2.7B), with cross-model replication on
 Pythia-410M, Pythia-1.4B, and Phi-4 (14B).
@@ -208,8 +208,8 @@ its top-20 and bottom-20 tokens (40 directions total, orthogonalized via QR
 decomposition) and inject only this token-subspace component. This recovers
 1% of the prediction gap — the token-readable part of the single-pair Δh is
 not where the causal content lives. (By contrast, injecting the full
-unrestricted Δh at the same layer recovers 69%, as in §3.1 — the causal
-content is present but not aligned with the loudest W_U directions.) The same
+unrestricted Δh at the same layer recovers 69% — the causal content is
+present but not aligned with the loudest W_U directions.) The same
 case triangulated against five baselines yields a shared component reading
 "doctor, doctors, rest, see" that recovers 77%. The five baselines are:
 
@@ -241,7 +241,7 @@ representation-level atomicity. We do not claim to recover atomic
 features. The method recovers the shared causal component at the
 granularity the contrast design provides.
 
-| Case | Single-pair recovery | Multi-contrast recovery | Shared direction reads |
+| Case | Single-pair recovery | Multi-contrast recovery | Shared component reads |
 |------|---------------------|------------------------|----------------------|
 | IOI (Mary/John) | 84% | — (not needed) | Mary, mary |
 | Capital (Paris/Berlin) | 97% | — (not needed) | Paris, French |
@@ -416,8 +416,8 @@ part of a distributed computation, not solely responsible for it.
 contrastive output norm (mean ~20%), with cosine alignment 0.03–0.30 to the
 full MLP contrastive output. The claim is correspondence, not completeness:
 the same feature that appears in the contrastive readout also appears in
-individual neuron detectors, these neurons are disproportionately impactful
-when ablated, and they are private to each contrast. This confirms that the
+individual neuron detectors, and these neurons are disproportionately
+impactful when ablated. This confirms that the
 W_U labels reflect internal model structure rather than projection artifacts.
 
 ---
@@ -1076,7 +1076,7 @@ observational findings from these papers (which layers, which heads, which
 content) but does not establish causality — it is an exploratory complement
 to these causal techniques. For successor heads, the per-head contrastive
 decomposition additionally reveals the discontinuity structure at temporal
-boundaries (§5.3).
+boundaries (§5.4).
 
 ---
 
