@@ -638,30 +638,57 @@ identifies heads that carry the IO name signal — the same observational
 signature as the name-mover heads that Wang et al. found in GPT-2, here
 located in Phi-2 using only contrastive projection.
 
-**Causal test.** Ablating all three heads at L24 (zeroing their pre-projection
-output at the last position) reduces P(Mary) from 0.696 to 0.685 — a 1.1%
-drop. Individual ablation: H14 reduces by 0.2%, H16 by 0.9%, H1 has no
-effect. Ablating three control heads (H0, H5, H10) produces a comparable
-0.3% drop. The generation does not change ("Mary because John was thirsty"
-in both cases). The same pattern holds across three name pairs.
+**Why the name-swap contrast cannot test routing.** Prompts A and B run the
+identical IOI algorithm — detect the duplicated subject, suppress it, copy the
+other name — and differ only in which tokens fill the roles. The shared
+algorithm cancels under subtraction, so the heads the contrast surfaces are
+name-content carriers, not the routing mechanism. Three tests sharpen what they
+are and whether they are causal.
 
-Injection tests the complementary question — sufficiency. Injecting the
-name-carrying heads' contrastive output (A−B) into B at L24 shifts P(Mary)
-from 0.026 to 0.037 at 1× and to 0.067 at 3× — directional but never
-flipping the prediction. Even replacing all 32 heads' outputs in B with
-A's via activation patching shifts P(Mary) only to 0.041. The name signal
-at L24 is not concentrated in the attention heads. By contrast, injecting
-the full residual-stream Δh at L28 recovers P(Mary) = 0.642 — the causal
-content is distributed across the full residual stream.
+**Attention patterns confirm two genuine name-movers.** At L24, H14 and H16
+attend from the final position to the IO token ("Mary"), with 0.86 and 0.56 of
+their attention mass on it — reading the indirect object directly, the
+name-mover signature. H1, also flagged by contrastive norm, instead attends to
+the sequence-initial sink token (0.87): it is a false positive of the norm
+criterion that the attention pattern filters out. Pairing contrastive norm with
+attention direction separates the readers (H14, H16) from sink heads.
 
-The contrastive norm correctly identifies which heads carry the IO name
-signal, but in Phi-2 the IOI computation is distributed rather than
-concentrated in a few heads. The heads that carry the largest contrastive
-signal are neither necessary (ablation) nor sufficient (injection) for the
-prediction. This differs from GPT-2, where Wang et al. found the IOI
-circuit concentrated in specific heads. The contrastive method reads the
-signal accurately; the architectural distribution of the computation is a
-property of the model, not the method.
+**Ablation and denoising agree: the heads are not the causal carrier.**
+Ablating all three heads at L24 (zeroing their pre-projection output at the last
+position) reduces P(Mary) from 0.696 to 0.685 — a 1.1% drop; individual
+ablation gives H14 −0.2%, H16 −0.9%, H1 none. Three control heads (H0, H5, H10)
+give a comparable 0.3% drop and the generation is unchanged. Denoising is the
+more sensitive complement: we corrupt the prompt by swapping the giver
+(P(Mary) = 0.011) and patch clean head outputs back at the final position,
+measuring how much of the clean–corrupt gap (toward 0.696) is restored.
+Patching the name-movers restores ≤1%; patching all 32 heads at the final
+position restores ≤2% — at every layer from L20 to L28. Injection gives the
+same verdict for sufficiency: the name-movers' contrastive output (A−B)
+shifts P(Mary) in B from 0.026 to only 0.037 at 1× and 0.067 at 3×, and
+patching all 32 heads A→B reaches only 0.041. By contrast, injecting the full
+residual-stream Δh at L28 drives P(Mary) to 0.642. The decision is carried by
+the cumulative residual stream, not by any layer's attention write at the
+final position.
+
+**An inhibition-preserving contrast surfaces structural signal.** Contrasting
+the IOI prompt against a no-duplicate baseline (giver = a third name, "Sam")
+keeps the duplicate-detection computation in the subtraction. This surfaces
+different heads — at L26 one reads the giver name ("Sam"), others read
+structural tokens — but the routing signal does not project to clean,
+interpretable tokens through W_U. The inhibition computation is present and
+contrast-isolable, but it is structural rather than token-shaped, unlike the
+name-identity content.
+
+**Summary.** With attention confirmation, contrastive projection correctly
+identifies the genuine name-mover heads (H14, H16) and their read site (the IO
+token), and exposes H1 as a sink-head artifact of the norm criterion. But in
+Phi-2 the IOI *decision* is distributed across the residual stream: the
+name-movers are neither necessary (ablation) nor sufficient (denoising and
+injection, at every layer tested), and the routing computation that selects IO
+over subject is structural rather than token-readable. This differs from GPT-2,
+where Wang et al. found the IOI circuit concentrated in specific heads. The
+contrastive method reads the signal accurately; the architectural distribution
+of the computation is a property of the model, not the method.
 
 **Accuracy:** 30/30 across 5 name pairs × 3 templates on Phi-2 (100%),
 30/30 on Pythia-1.4B (100%), 29/30 on Pythia-410M (97%).
