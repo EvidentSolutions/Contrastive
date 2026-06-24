@@ -22,17 +22,9 @@ SCRIPTS=(
     explore_current_token.py
     integration_dynamics.py
     syntactic_axes.py
-    logic_deduction_contrast.py
-    geometric_ordering.py
-    rotation_test.py
     poster_cases.py
-    severity_and_arithmetic.py
-    arithmetic_deep.py
     replicate_landmarks.py
-    epistemological.py
     per_head_analysis.py
-    truth_representation.py
-    epistemic_verbs.py
 )
 
 echo "=============================================="
