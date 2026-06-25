@@ -14,7 +14,7 @@
 \usepackage[hidelinks]{hyperref}
 
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
-\newcommand{\dh}{\Delta h}
+\newcommand{\dhh}{\Delta h}
 \newcommand{\WU}{W_U}
 
 \title{Contrastive Projection: Reading Transformer Internals\\ Through Desuperposition}
@@ -109,8 +109,8 @@ Given two inputs $c$ and $k$:
 \begin{enumerate}[leftmargin=*]
 \item Run both and extract hidden states at every layer at the read position:
    $h_c[L]$ and $h_k[L]$ for $L = 0, \dots, N$.
-\item Compute $\dh[L] = h_c[L] - h_k[L]$.
-\item Project: $\Delta\text{logits}[L] = \dh[L] \cdot \WU^\top$.
+\item Compute $\dhh[L] = h_c[L] - h_k[L]$.
+\item Project: $\Delta\text{logits}[L] = \dhh[L] \cdot \WU^\top$.
 \item Read the top-$K$ most positive tokens (associated with input $c$) and the
    top-$K$ most negative tokens (associated with input $k$). The two poles
    together describe the contrast in token space.
@@ -143,7 +143,7 @@ Raw and Post-norm logit vectors exceeds 0.98 at L28+ and 0.84 at the minimum
 The variants diverge only in \emph{magnitude}: residual-stream norms grow across
 layers (from 4 at L1 to 175 at L31), so raw $\Delta$logits norms are not comparable
 across layers. Where we report norms across layers (e.g., \S5.3), we use the
-relative norm $\|\dh\| / \|h_c\|$ to remove this scale artifact. Bypassing $\text{LN}_f$
+relative norm $\|\dhh\| / \|h_c\|$ to remove this scale artifact. Bypassing $\text{LN}_f$
 means the projection relies on directional alignment between the residual
 stream and $\WU$ rather than the calibrated magnitude that $\text{LN}_f$ would provide;
 relative magnitude comparisons across layers should be interpreted
@@ -161,7 +161,7 @@ rows through $\WU$ produces interpretable labels (N925: ``food, food, foods'';
 N7828: ``food, edible, delicious''; N841: ``husband, husbands, boyfriend'').
 The same rows through $W_E$ produce noise (``union, replacement, abet'';
 ``required, when, executive''; ``Representative, postal, learning'').
-Contrastive $\dh$ shows the same pattern: $\WU$ reads ``tast, charred, crispy,
+Contrastive $\dhh$ shows the same pattern: $\WU$ reads ``tast, charred, crispy,
 delicious'' for hot dog at L28; $W_E$ reads ``is, ern, erton.'' The alignment
 gap widens with depth: fc1 rows' peak token-specificity via $\WU$ exceeds
 $W_E$ by $1.02\times$ at L4, growing to $1.40\times$ at L28. The model's internal
@@ -224,10 +224,10 @@ We verify this empirically in \S3.4.
 \subsection{The full activation delta is causal}
 
 The probe is exploratory. As a baseline,
-we test whether the full activation delta $\dh[L] = h_\text{context}[L] - h_\text{control}[L]$
+we test whether the full activation delta $\dhh[L] = h_\text{context}[L] - h_\text{control}[L]$
 contains the causal information by injecting it into the control's residual
 stream at layer $L$ and measuring prediction gap recovery. This is standard
-activation patching: adding $\dh$ to the control effectively replaces its
+activation patching: adding $\dhh$ to the control effectively replaces its
 activation with the context's at that layer, so recovery at late layers is
 expected. The interesting result is the \emph{layer profile} --- at which layer does
 recovery onset, and does this match the contrastive readout?
@@ -245,15 +245,15 @@ Eiffel $\rightarrow$ Paris & 0\% & 0\% & 2\% & 55\% & 73\% & 66\% & 1778 \\
 Successor $\rightarrow$ Tuesday & 0\% & 0\% & 0\% & 11\% & 87\% & 98\% & 223 \\
 \bottomrule
 \end{tabular}
-\caption{Prediction-gap recovery from injecting the full activation delta $\dh[L]$ at one layer, for four cases (percent of the clean--control gap). Random directions of equal norm give zero mean recovery; the final column reports the $z$-score against that null.}
+\caption{Prediction-gap recovery from injecting the full activation delta $\dhh[L]$ at one layer, for four cases (percent of the clean--control gap). Random directions of equal norm give zero mean recovery; the final column reports the $z$-score against that null.}
 \label{tab:recovery}
 \end{table}
 
 Recovery is zero at early layers and clear by L28--31 (75--150\%).
 Random directions of the same norm give zero mean recovery at every layer
-($z = 223$--$4249$). This establishes that the \emph{direction} of $\dh$ matters, not
+($z = 223$--$4249$). This establishes that the \emph{direction} of $\dhh$ matters, not
 just its norm --- but it does not validate the token-space readout
-specifically. Section 3.4 tests whether the token-readable component of $\dh$
+specifically. Section 3.4 tests whether the token-readable component of $\dhh$
 carries the causal content.
 
 \paragraph{Onset matches trajectory content.} Hot dog recovery begins at L12 (5\%),
@@ -265,7 +265,7 @@ projection first reads target-relevant content at the prediction position.
 
 \subsection{Dose-response and bidirectional causality}
 
-The layer-sweep above injects the full $\dh$ at one layer. We can also extract a
+The layer-sweep above injects the full $\dhh$ at one layer. We can also extract a
 specific contrastive \emph{direction} from multiple pairs and test its causal effect
 with controlled magnitude.
 
@@ -393,7 +393,7 @@ bidirectionally causal for the strongest pairs.
 
 The previous sections establish that the contrastive direction is causal
 (\S3.1) and specific (\S3.2). A separate question is whether the features the
-method reads --- the token-space content of $\dh$ --- correspond to structure the
+method reads --- the token-space content of $\dhh$ --- correspond to structure the
 model itself uses, or are artifacts of projecting through $\WU$.
 
 We test this by decomposing MLP neurons into read$\rightarrow$gate$\rightarrow$write components.
@@ -421,7 +421,7 @@ ranges from 1 (capital France/Germany, formal/informal, agent swap) to 11
 $+1.50$ for ``The hot dog was'' and $-0.01$ for ``The hot cat was.'' When the gate
 opens, its fc2 column writes ``flavors, tasting, flavor, flavorful, edible''
 into the residual stream. The contrastive method at L20 reads food tokens
-from $\dh$; neuron 7828 internally detects and gates on the same feature.
+from $\dhh$; neuron 7828 internally detects and gates on the same feature.
 
 \begin{table}[htbp]
 \centering
@@ -440,7 +440,7 @@ Neuron & Layer & Contrast & fc1 reads & Pre-GELU (A/B) & fc2 writes \\
 \end{tabular}
 \caption{MLP neurons whose fc1 read direction aligns with the contrastive
 input and whose GELU gates selectively. Each neuron detects the same feature
-the contrastive method reads from $\dh$.}
+the contrastive method reads from $\dhh$.}
 \label{tab:neurons}
 \end{table}
 
@@ -466,12 +466,12 @@ target signal is superposed with pair-specific content. We test whether
 multi-contrast triangulation recovers the causal component.
 
 For ``She caught a cold'' vs ``She caught a fish,'' we project the single-pair
-$\dh$ onto the subspace spanned by the $\WU$ rows of its top-20 and bottom-20
+$\dhh$ onto the subspace spanned by the $\WU$ rows of its top-20 and bottom-20
 tokens (40 directions total, orthogonalized via QR decomposition) and
 inject only this token-subspace component. This recovers 1\% of the
-prediction gap --- the token-readable part of the single-pair $\dh$ is not
+prediction gap --- the token-readable part of the single-pair $\dhh$ is not
 where the causal content lives. (By contrast, injecting the full
-unrestricted $\dh$ at the same layer recovers 69\% --- the causal content is
+unrestricted $\dhh$ at the same layer recovers 69\% --- the causal content is
 present but not aligned with the loudest $\WU$ directions.) The same case
 triangulated against five baselines yields a shared component reading
 ``doctor, doctors, rest, see'' that recovers 77\%. The five baselines are:
@@ -535,7 +535,7 @@ $\WU$ contributes the interpretable token labels. Trajectory smoothness
 not specific to meaningful contrasts: unrelated pairs (``The hot dog was'' vs
 ``Quantum mechanics is'') are equally smooth ($0.93 \pm 0.01$, $N=40$) as minimal
 pairs ($0.88 \pm 0.03$, $N=6$), because any two residual streams diverge gradually.
-Random directions give cosine $\sim$0.00 ($z = 64$--$93$), confirming $\dh$ is structured
+Random directions give cosine $\sim$0.00 ($z = 64$--$93$), confirming $\dhh$ is structured
 rather than noise, but smoothness alone does not validate content.
 
 \section{Lexical disambiguation}
@@ -585,7 +585,7 @@ compound-noun information from ``dog'' and write it to ``was.''
 reference points. Five different contrasts (hot dog minus cold/angry/old/pet/stray
 dog) produce pairwise cosine 0.72--0.84 at the dog position, confirming
 the signal is about food-compound identity, not temperature or emotion. Note
-that high pairwise cosine between full $\dh$ vectors does not imply high
+that high pairwise cosine between full $\dhh$ vectors does not imply high
 recovery from their top $\WU$ token directions (Table~\ref{tab:triangulation} reports 11\% for hot
 dog). The cosine measures alignment of the full d-model vectors; the 11\%
 measures how much of each vector lives in the subspace of its loudest $\WU$
@@ -733,7 +733,7 @@ pragmatically marked quantifier --- the one that generates scalar implicature
 --- rather than the scale reflecting quantity.
 
 \textbf{Explicit vs bare.} Contrasting ``Some of the students passed'' against
-``Some but not all of the students passed'' produces a non-trivial $\dh$ (norm
+``Some but not all of the students passed'' produces a non-trivial $\dhh$ (norm
 57--59 at L28). The $-$side reads ``some, Some, not, neither, but, BUT'' --- the
 explicit restriction changes the representation. The bare ``some'' computes
 partial implicature (the ``everyone/except'' signal), but adding ``but not all''
@@ -817,7 +817,7 @@ position restores $\le$2\% --- at every layer from L20 to L28. Injection gives t
 same verdict for sufficiency: the name-movers' contrastive output (A$-$B)
 shifts P(Mary) in B from 0.026 to only 0.037 at $1\times$ and 0.067 at $3\times$, and
 patching all 32 heads A$\rightarrow$B reaches only 0.041. By contrast, injecting the full
-residual-stream $\dh$ at L28 drives P(Mary) to 0.642. The decision is carried by
+residual-stream $\dhh$ at L28 drives P(Mary) to 0.642. The decision is carried by
 the cumulative residual stream, not by any layer's attention write at the
 final position.
 
@@ -1036,7 +1036,7 @@ L28 --- specific factual content. Vogelkirche minus generic reads ``Vog, von,
 Von'' --- only name tokens. The hallucinated entity's representation contains
 no factual content beyond the name itself.
 
-\textbf{Contrastive norm.} The relative norm $\|\dh\|/\|h\|$ at L28 is systematically
+\textbf{Contrastive norm.} The relative norm $\|\dhh\|/\|h\|$ at L28 is systematically
 larger for real-vs-fictional pairs (mean 0.98) than real-vs-real pairs (mean
 0.70). Two real entities both occupy a shared subspace of factual-entity
 representations, constraining their difference; a fictional entity lacks
@@ -1407,7 +1407,7 @@ hands off to heavier tools for causal verification.
   (\S3.3) provides independent evidence that these labels match internal
   model structure for the cases tested.
 \item \textbf{Smoothness is not $\WU$-specific.} Trajectory coherence
-  (consecutive-layer cosine) is a property of $\dh$, not of $\WU$.
+  (consecutive-layer cosine) is a property of $\dhh$, not of $\WU$.
 \item \textbf{Exploratory, not causal.} The per-position trace and per-head
   decomposition identify large contributors, not causes. We verify
   causality via activation patching for the hot dog case (\S4.1) and via
