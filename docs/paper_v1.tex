@@ -1,17 +1,32 @@
 \documentclass[11pt]{article}
 
+% Typography
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
+\usepackage{mathpazo}               % Palatino for text and math (scalable)
+\usepackage[scaled=0.85]{berasans} % Bera Sans for sans-serif
+\usepackage[scaled=0.85]{beramono} % Bera Mono for monospace
+\usepackage{microtype}             % Better typographic refinement
+
+% Layout
 \usepackage[margin=1in]{geometry}
-\usepackage{microtype}
+\usepackage{setspace}
+\setstretch{1.15}                  % Slightly opened up line spacing
+\usepackage{parskip}              % Paragraph spacing instead of indentation
+
+% Math and tables
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{booktabs}
 \usepackage{tabularx}
 \usepackage{array}
 \usepackage{enumitem}
+\usepackage[font=small,labelfont=bf]{caption}
+
+% References
+\usepackage{xcolor}
+\usepackage[colorlinks,citecolor=blue!60!black,linkcolor=blue!60!black,urlcolor=blue!60!black]{hyperref}
 \usepackage[round]{natbib}
-\usepackage[hidelinks]{hyperref}
 
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \newcommand{\dhh}{\Delta h}
